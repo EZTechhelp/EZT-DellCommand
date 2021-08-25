@@ -145,5 +145,5 @@ If you cannot use an RMM system like iTarian to pass credentials at runtime, the
    - Default: "C:\Logs\"
    - Directory where log file should be created
    - Feel free to change location if desired
-=======
+
 
