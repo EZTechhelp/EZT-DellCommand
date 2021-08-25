@@ -24,7 +24,7 @@ Automates checking for or installing Dell driver, firmware and other updates ava
 - It is recommended to **leave the option to open the HTML report automatically disabled when running as a procedure**, as obviously you probably don't want it to be opened on a remote machine. The option is there if you want to run the script locally or manually on a machine 
 - This is a **powershell script**. As such this will only work on **Windows** endpoints. It is untested on Powershell Core. Requires **Powershell v3** or higher. Tested on **Windows 10**. It may work on Windows 7 but is untested
 
-### Available Versions
+## Available Versions
 
 **[Self Executable DEMO](https://github.com/EZTechhelp/EZT-DellCommand/raw/main/EZT-DellCommand-DEMO.zip)**  
 
