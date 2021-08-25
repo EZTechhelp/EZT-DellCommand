@@ -32,15 +32,15 @@ Automates checking for or installing Dell driver, firmware and other updates ava
 - This version is only configured to scan for updates, generate a report and immediately open the report in your default browser. It otherwise cannot be configured
 - Its packaged as a self-executable for quick and easy testing and mobility
 
-**Powershell Source Code** 
+**[Powershell Source Code](https://github.com/EZTechhelp/EZT-DellCommand/raw/main/EZT-DellCommand.ps1)** 
 
 - Powershell only version, main script
 
-**Python Source Code**
+**[Python Source Code](https://github.com/EZTechhelp/EZT-DellCommand/raw/main/EZT-DellCommand.py)**
 
 - Python only version that is also the source code for the iTarian Procedure
 
-**iTarian Procedure**
+**[iTarian Procedure](https://github.com/EZTechhelp/EZT-DellCommand/raw/main/EZT-DellCommand-v023.json)**
 
 - Basically just the Python version exported from iTarian. Use this to quickly import into your iTarian procedures
 
