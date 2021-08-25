@@ -26,7 +26,7 @@ Automates checking for or installing Dell driver, firmware and other updates ava
 
 ### Available Versions
 
-**Self Executable DEMO**  
+**[Self Executable DEMO](https://github.com/EZTechhelp/EZT-DellCommand/raw/main/EZT-DellCommand-DEMO.zip)**  
 
 - Use this if you wish to test and try this script without using it as a procedure
 - This version is only configured to scan for updates, generate a report and immediately open the report in your default browser. It otherwise cannot be configured
