@@ -1,5 +1,4 @@
 # EZT-DellCommand
-<<<<<<< HEAD
 
 **Synopsis**
 
@@ -147,5 +146,4 @@ If you cannot use an RMM system like iTarian to pass credentials at runtime, the
    - Directory where log file should be created
    - Feel free to change location if desired
 =======
-Automates checking for or installing Dell driver, firmware and other updates available using DellCommand
->>>>>>> 405705a0f076924f89a57942ff08215e373691e0
+
