@@ -76,9 +76,17 @@ _**Note: 1 = Enabled, 0 = Disabled**_
    - Enter update types to install if detected, comma separated. 
    - Available Types you can use: **bios, firmware, driver, application, others, all**
    - Adding anything not listed above or leaving blank will disable installing updates
-   - Adding '**all**' takes priority and will always install all updates. 
+   - Adding '**all**' takes priority and will always install all updates 
    - Example to install just bios and driver updates: 
      - "bios,driver"
+-  **InstallDellCommand_Update_Severity**
+   - Default: all
+   - Enter update severity types to install if detected, comma seperated
+   - Available Types you can use: **security,critical,recommended,optional,all**
+   - If blank, 'All' is assumed
+   - Adding '**all**' takes priority and will always install severity updates, but ONLY if Install_Dell_Update_Types is defined and matches an available update. 
+   - Example: to install just critical and security updates when Install_Dell_Update_Types is set: 
+     - "security,critical"
 -  **Dell_Install_Reboot**
    - Default: 0
    - Enables automatic reboot of system after updates are installed
