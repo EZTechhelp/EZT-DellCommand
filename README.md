@@ -9,7 +9,7 @@ Automates checking for or installing Dell driver, firmware and other updates ava
 - Ability to scan for available updates and generate a HTML report
 - Ability to save the HTML report to a specified directory
 - Ability to email the HTML report as an attachment to a specified address
-- Ability to install all available updates or specify to install specific types
+- Ability to install all available updates or specify to install by specific type and severity
 - HTML report includes links to Dell support site and direct file downloads for each update
 - HTML report includes ability to search, filter, or export to formats such as excel, CSV and PDF 
 - Reads DellCommand.log in real-time to get accurate status and exit codes
