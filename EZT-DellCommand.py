@@ -4,27 +4,27 @@ import sys
 ps_content=r'''
 <#  
     .Name
-     EZT-DellCommand
+    EZT-DellCommand
     
     .Version 
-     0.23
+    0.25
 
     .SYNOPSIS
-     Automates checking for or installing Dell driver, firmware and other updates available using DellCommand
+    Automates checking for or installing Dell driver, firmware and other updates available using DellCommand
 
     .DESCRIPTION
        
     .Configurable Variables:
 
     .EXAMPLE
-     \EZT-DellCommand.ps1
+    \EZT-DellCommand.ps1
 
     .OUTPUTS
     System.Management.Automation.PSObject
 
     .Credits
-     Write-Color           - https://github.com/EvotecIT/PSWriteColor
-     HTML Dashboard        - https://github.com/EvotecIT/PSWriteHTML
+    Write-Color           - https://github.com/EvotecIT/PSWriteColor
+    HTML Dashboard        - https://github.com/EvotecIT/PSWriteHTML
 
     .NOTES
     Author: EZTechhelp
@@ -40,6 +40,7 @@ ps_content=r'''
 #----------------------------------------------
 $runDellCommand = $true #enables download and execution of dell command. Leave enabled otherwise this script doesnt do very much
 $installDellCommand_Drivers_Types = "''' + itsm.getParameter('Install_Dell_Update_Types') + '''" #enter update types to install if detected, comma seperated. Adding 'All' takes priority and will install all updates. Available Types: bios, firmware, driver, application, others, All
+$installDellCommand_Update_Severity = "''' + itsm.getParameter('Install_Dell_Update_Severity') + '''" #enter update severity types to install if detected, comma seperated. If blank, 'All' is assumed. Available Types: security,critical,recommended,optional,All
 $InstallDellCommand_Drivers_reboot = "''' + itsm.getParameter('Dell_Install_Reboot') + '''" #enables automatic reboot of system after updates are installed
 $DownloadURL_Dell = "''' + itsm.getParameter('DownloadURL_Dell') + '''" #download url for the dell command installer file
 $DownloadLocation_Dell = "''' + itsm.getParameter('DownloadLocation_Dell') + '''" #working directory where the dell command installer file will be downloaded and executed
@@ -86,8 +87,8 @@ $logfile_directory = "''' + itsm.getParameter('LogFile_Directory') + '''" # dire
 #region Global Variables - DO NOT CHANGE UNLESS YOU KNOW WHAT YOU'R DOING
 #----------------------------------------------
 $stopwatch = [system.diagnostics.stopwatch]::StartNew() #starts stopwatch timer 
-$Required_modules = "PSWriteHTML","PSWriteColor","PowerShellGet" #these modules are automatically installed and imported if not already
-$update_modules = $true # enables checking for and updating all required modules for this script. Potentially adds a few seconds to total runtime but ensures all modules are the latest
+$Required_modules = 'PSWriteHTML','PSWriteColor','PowerShellGet' #these modules are automatically installed and imported if not already
+$update_modules = $false # enables checking for and updating all required modules for this script. Potentially adds a few seconds to total runtime but ensures all modules are the latest
 $force_modules = $false # enables installing and importing of a module even if it is already. Should not be used unless troubleshooting module issues 
 $logdateformat = 'MM/dd/yyyy h:mm:ss tt' # sets the date/time appearance format for log file and console messages
 #---------------------------------------------- 
@@ -113,18 +114,12 @@ function Get-ThisScriptInfo
     $thisScript = @{File = Get-ChildItem $ScriptPath; Contents = $Invocation.MyCommand}
   }
   else
-  {
-    $thisScript = @{File = Get-ChildItem $ScriptPath; Contents = $Invocation.MyCommand.ScriptContents}
-  }
-  If ($thisScript.Contents -Match "^\s*\<#([\s\S]*?)#\>") 
-  {
-    $thisScript.Help = $Matches[1].Trim()
-  }
-  [RegEx]::Matches($thisScript.Help, "(^|[`r`n])\s*\.(.+)\s*[`r`n]|$") | foreach {
+  {$thisScript = @{File = Get-ChildItem $ScriptPath; Contents = $Invocation.MyCommand.ScriptContents}}
+  If ($thisScript.Contents -Match '^\s*\<#([\s\S]*?)#\>') 
+  {$thisScript.Help = $Matches[1].Trim()}
+  [RegEx]::Matches($thisScript.Help, "(^|[`r`n])\s*\.(.+)\s*[`r`n]|$") | ForEach-Object {
     If ($Caption) 
-    {
-      $thisScript.$Caption = $thisScript.Help.SubString($Start, $_.Index - $Start)
-    }
+    {$thisScript.$Caption = $thisScript.Help.SubString($Start, $_.Index - $Start)}
     $Caption = $_.Groups[2].ToString().Trim()
     $Start = $_.Index + $_.Length
   }
@@ -134,20 +129,12 @@ function Get-ThisScriptInfo
   
   $thisScript.Name = $thisScript.Name.Trim()
   
-  $thisScript.credits = $thisScript.credits -split("`n") | foreach {
-    $_.trim()
-  }
-  $thisScript.SYNOPSIS = $thisScript.SYNOPSIS -split("`n") | foreach {
-    $_.trim()
-  }
-  $thisScript.Description = $thisScript.Description -split("`n") | foreach {
-    $_.trim()
-  }
-  $thisScript.Notes = $thisScript.Notes -split("`n") | foreach {
-    $_.trim()
-  }
+  $thisScript.credits = $thisScript.credits -split("`n") | ForEach-Object {$_.trim()}
+  $thisScript.SYNOPSIS = $thisScript.SYNOPSIS -split("`n") | ForEach-Object {$_.trim()}
+  $thisScript.Description = $thisScript.Description -split("`n") | ForEach-Object {$_.trim()}
+  $thisScript.Notes = $thisScript.Notes -split("`n") | ForEach-Object {$_.trim()}
   $thisScript.Path = $thisScript.File.FullName; $thisScript.Folder = $thisScript.File.DirectoryName; $thisScript.BaseName = $thisScript.File.BaseName
-  $thisScript.Arguments = (($Invocation.Line + " ") -Replace ("^.*\\\\" + $thisScript.File.Name.Replace(".", "\.") + "['"" ]"), "").Trim()
+  $thisScript.Arguments = (($Invocation.Line + ' ') -Replace ('^.*\\\\' + $thisScript.File.Name.Replace('.', '\.') + "['"" ]"), '').Trim()
   return $thisScript
 }
 $thisScript = Get-ThisScriptInfo
@@ -155,16 +142,12 @@ $Script_Temp_Folder = "$env:TEMP\$($thisScript.Name)"
 if(!(Test-Path $Script_Temp_Folder))
 {
   try
-  {
-    $null = New-Item $Script_Temp_Folder -ItemType Directory -Force
-  }
+  {$null = New-Item $Script_Temp_Folder -ItemType Directory -Force}
   catch
-  {
-    write-ezlogs "[ERROR] Exception creating script temp directory $Script_Temp_Folder - $_" -ShowTime -color Red
-  }
+  {Write-EZLogs "[ERROR] Exception creating script temp directory $Script_Temp_Folder - $_" -ShowTime -color Red}
 }
-write-host "#### Executing $($thisScript.Name) - v$($thisScript.Version) ####" -ForegroundColor Black -BackGroundColor yellow
-write-host " | $($thisScript.SYNOPSIS)"
+Write-Host "#### Executing $($thisScript.Name) - v$($thisScript.Version) ####" -ForegroundColor Black -BackGroundColor yellow
+Write-Host " | $($thisScript.SYNOPSIS)"
 #---------------------------------------------- 
 #endregion Get-ThisScriptInfo Function
 #----------------------------------------------
@@ -176,14 +159,12 @@ if ($enablelogs)
 {  
   $logfile = [System.IO.Path]::Combine($logfile_directory, "$($thisScript.Name)-$($thisScript.Version).log")
   if (!(Test-Path -LiteralPath $logfile 2> $null))
-  {
-    $null = New-Item -Path $logfile_directory -ItemType directory -Force
-  }
+  {$null = New-Item -Path $logfile_directory -ItemType directory -Force}
   $OriginalPref = $ProgressPreference
   $ProgressPreference = 'SilentlyContinue'
-  $Computer_Info = gwmi Win32_ComputerSystem | Select-Object *
-  $OS_Info = Get-CIMInstance Win32_OperatingSystem | Select-Object *
-  $CPU_Name = (Get-WmiObject Win32_Processor -Property "Name").name
+  $Computer_Info = Get-WmiObject Win32_ComputerSystem | Select-Object *
+  $OS_Info = Get-CimInstance Win32_OperatingSystem | Select-Object *
+  $CPU_Name = (Get-WmiObject Win32_Processor -Property 'Name').name
   $ProgressPreference = $OriginalPref
   $logheader = @"
 `n###################### Logging Enabled ######################
@@ -199,7 +180,7 @@ CPU                  : $($CPU_Name)
 RAM                  : $([Math]::Round([int64]($computer_info.TotalPhysicalMemory)/1MB,2)) GB (Available: $([Math]::Round([int64]($OS_Info.FreePhysicalMemory)/1MB,2)) GB)
 Manufacturer         : $($computer_info.Manufacturer)
 Model                : $($computer_info.Model)
-Serial Number        : $((Get-WmiObject Win32_BIOS | Select SerialNumber).SerialNumber)
+Serial Number        : $((Get-WmiObject Win32_BIOS | Select-Object SerialNumber).SerialNumber)
 Domain               : $($computer_info.Domain)
 Install Date         : $($OS_Info.InstallDate)
 Last Boot Up Time    : $($OS_Info.LastBootUpTime)
@@ -207,8 +188,8 @@ Local Date/Time      : $($OS_Info.LocalDateTime)
 Windows Directory    : $($OS_Info.WindowsDirectory)
 ###################### Logging Started - [$(Get-Date)] ##########################
 "@
-    Write-Output $logheader | Out-File -FilePath $logfile -Encoding unicode -Append
-    write-host " | Logging is enabled. Log file: $logfile"
+  Write-Output $logheader | Out-File -FilePath $logfile -Encoding unicode -Append
+  Write-Host " | Logging is enabled. Log file: $logfile"
 }
 #---------------------------------------------- 
 #endregion Begin Logging
@@ -221,10 +202,8 @@ function Load-Modules ($modules,$force,$update)
 {
   #Make sure we can download and install modules through NuGet
   [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-  if (Get-PackageProvider | Where-Object {$_.Name -eq "Nuget"}) 
-  {
-    write-output " | Required PackageProvider Nuget is installed." -OutVariable message;if($enablelogs){$message | Out-File -FilePath $logfile -Encoding unicode -Append}
-  }
+  if (Get-PackageProvider | Where-Object {$_.Name -eq 'Nuget'}) 
+  {Write-Output ' | Required PackageProvider Nuget is installed.' -OutVariable message;if($enablelogs){$message | Out-File -FilePath $logfile -Encoding unicode -Append}}
   else
   {
     try
@@ -233,24 +212,22 @@ function Load-Modules ($modules,$force,$update)
       Register-PackageSource -Name nuget.org -Location https://www.nuget.org/api/v2 -ProviderName NuGet
     }
     catch
-    {
-      write-error "[Load-Module ERROR] $_`n" -ErrorVariable messageerror;if($enablelogs){$messageerror | Out-File -FilePath $logfile -Encoding unicode -Append}
-    }
+    {Write-Error "[Load-Module ERROR] $_`n" -ErrorVariable messageerror;if($enablelogs){$messageerror | Out-File -FilePath $logfile -Encoding unicode -Append}}
   }
   #Install latest version of PowerShellGet
-  if (Get-Module "PowershellGet" | Where-Object {$_.Version -lt 2.2.5})
+  if (Get-Module 'PowershellGet' | Where-Object {$_.Version -lt 2.2.5})
   {
-    write-output " | PowershellGet version too low, updating to 2.2.5" -OutVariable message;if($enablelogs){$message | Out-File -FilePath $logfile -Encoding unicode -Append}
-    Install-Module -Name "PowershellGet" -MinimumVersion 2.2.5 -Force 
+    Write-Output ' | PowershellGet version too low, updating to 2.2.5' -OutVariable message;if($enablelogs){$message | Out-File -FilePath $logfile -Encoding unicode -Append}
+    Install-Module -Name 'PowershellGet' -MinimumVersion 2.2.5 -Force 
   }
   foreach ($m in $modules)
   {  
     if (Get-Module | Where-Object {$_.Name -eq $m}) 
     {
-      write-output " | Required Module $m is imported." -OutVariable message;if($enablelogs){$message | Out-File -FilePath $logfile -Encoding unicode -Append}
+      Write-Output " | Required Module $m is imported." -OutVariable message;if($enablelogs){$message | Out-File -FilePath $logfile -Encoding unicode -Append}
       if ($force)
       {
-        write-output " | Force parameter applied - Installing $m" -OutVariable message;if($enablelogs){$message | Out-File -FilePath $logfile -Encoding unicode -Append}
+        Write-Output " | Force parameter applied - Installing $m" -OutVariable message;if($enablelogs){$message | Out-File -FilePath $logfile -Encoding unicode -Append}
         Install-Module -Name $m -Scope AllUsers -Force -Verbose 
       }
     }
@@ -259,10 +236,10 @@ function Load-Modules ($modules,$force,$update)
       #If module is not imported, but available on disk set module autoloading when needed/called 
       if (Get-Module -ListAvailable | Where-Object {$_.Name -eq $m}) 
       {
-        $PSModuleAutoLoadingPreference = "ModuleQualified"
+        $PSModuleAutoLoadingPreference = 'ModuleQualified'
         if($update)
         {
-          write-output " | Updating module: $m" -OutVariable message;if($enablelogs){$message | Out-File -FilePath $logfile -Encoding unicode -Append}
+          Write-Output " | Updating module: $m" -OutVariable message;if($enablelogs){$message | Out-File -FilePath $logfile -Encoding unicode -Append}
           Update-Module -Name $m -Force -ErrorAction Continue
         }
         if($force)
@@ -282,21 +259,19 @@ function Load-Modules ($modules,$force,$update)
             Import-Module $m -Verbose -force -Scope Global
           }
           catch
-          {
-            write-error "[Load-Module ERROR] $_" -ErrorVariable messageerror;if($enablelogs){$messageerror | Out-File -FilePath $logfile -Encoding unicode -Append}
-          }      
+          {Write-Error "[Load-Module ERROR] $_" -ErrorVariable messageerror;if($enablelogs){$messageerror | Out-File -FilePath $logfile -Encoding unicode -Append}}      
         }
         else 
         {
           #If module is not imported, not available and not in online gallery then abort
-          write-error "[Load-Module ERROR] Required module $m not imported, not available and not in online gallery, exiting." -ErrorVariable messageerror;if($enablelogs){$messageerror | Out-File -FilePath $logfile -Encoding unicode -Append}
+          Write-Error "[Load-Module ERROR] Required module $m not imported, not available and not in online gallery, exiting." -ErrorVariable messageerror;if($enablelogs){$messageerror | Out-File -FilePath $logfile -Encoding unicode -Append}
           EXIT 1
         }
       }
     }
   } 
 }
-Load-modules -modules $Required_modules -force:$force_modules -update:$update_modules
+Load-Modules -modules $Required_modules -force:$force_modules -update:$update_modules
 #---------------------------------------------- 
 #endregion Load-Modules Function
 #----------------------------------------------
@@ -334,27 +309,19 @@ Function Write-EZLogs
     {
       $tmp = [System.IO.Path]::GetTempFileName();
       Write-Warning ($wrn = "[$(Get-Date -Format $DateTimeFormat)] $text");Write-Output "[$(Get-Date -Format $DateTimeFormat)] [WARNING] $wrn" | Out-File -FilePath $logfile -Encoding unicode -Append -Verbose:$VerboseDebug 4>$tmp
-      $result = "[DEBUG] $(cat $tmp)" | Out-File $logfile -Encoding unicode -Append;rm $tmp   
+      $result = "[DEBUG] $(Get-Content $tmp)" | Out-File $logfile -Encoding unicode -Append;Remove-Item $tmp   
     }
     elseif($Warning)
-    {
-      Write-Color -showtime -NoNewLine -DateTimeFormat:$DateTimeFormat;Write-Warning ($wrn = "$text");Write-Output "[$(Get-Date -Format $DateTimeFormat)] [WARNING] $wrn" | Out-File -FilePath $logfile -Encoding unicode -Append
-    }
+    {Write-Color -showtime -NoNewLine -DateTimeFormat:$DateTimeFormat;Write-Warning ($wrn = "$text");Write-Output "[$(Get-Date -Format $DateTimeFormat)] [WARNING] $wrn" | Out-File -FilePath $logfile -Encoding unicode -Append}
     else
-    {
-      Write-Color $text -color:$color -showtime:$showtime -LogFile:$logfile -LogTime:$logtime -NoNewLine:$NoNewLine -DateTimeFormat:$DateTimeFormat -BackGroundColor $BackgroundColor_param
-    }
+    {Write-Color $text -color:$color -showtime:$showtime -LogFile:$logfile -LogTime:$logtime -NoNewLine:$NoNewLine -DateTimeFormat:$DateTimeFormat -BackGroundColor $BackgroundColor_param}
   }
   else
   {
     if($warning)
-    {
-      Write-Color -showtime -NoNewLine -DateTimeFormat:$DateTimeFormat;Write-Warning ($wrn = "$text")
-    }
+    {Write-Color -showtime -NoNewLine -DateTimeFormat:$DateTimeFormat;Write-Warning ($wrn = "$text")}
     else
-    {
-      Write-Color $text -color:$color -showtime:$showtime -NoNewLine:$NoNewLine -DateTimeFormat:$DateTimeFormat -BackGroundColor $BackgroundColor_param
-    }     
+    {Write-Color $text -color:$color -showtime:$showtime -NoNewLine:$NoNewLine -DateTimeFormat:$DateTimeFormat -BackGroundColor $BackgroundColor_param}     
   }
 }
 #---------------------------------------------- 
@@ -362,39 +329,80 @@ Function Write-EZLogs
 #----------------------------------------------
 
 #---------------------------------------------- 
+#region Stop Logging
+#----------------------------------------------
+function Stop-Logging
+{
+  param (
+    [switch]$ErrorSummary,
+    [string]$logfile = $logfile,
+    [switch]$logOnly,
+    [switch]$enablelogs,
+    [switch]$stoptimer,
+    [switch]$clearErrors
+  )
+  if($Error -and $ErrorSummary)
+  {
+    Write-Output "`n`n[-----ALL ERRORS------]" | Out-File -FilePath $logfile -Encoding unicode -Append
+    $e_index = 0
+    foreach ($e in $error)
+    {
+      $e_index++
+      Write-Output "[ERROR $e_index Message] =========================================================================`n$($e.exception.message)`n$($e.InvocationInfo.positionmessage)`n$($e.ScriptStackTrace)`n`n" | Out-File -FilePath $logfile -Encoding unicode -Append
+    }
+    Write-Output '-----------------' | Out-File -FilePath $logfile -Encoding unicode -Append
+    if($clearErrors)
+    {
+      $error.Clear()
+    }
+  }
+  if($logOnly){Write-Output "`n======== Total Script Execution Time ========" | Out-File -FilePath $logfile -Encoding unicode -Append}else{Write-EZLogs "`n======== Total Script Execution Time ========" -enablelogs:$enablelogs -LogTime:$false}
+  if($logOnly){Write-Output "Minutes      : $($stopwatch.elapsed.Minutes)`nSeconds      : $($stopwatch.elapsed.Seconds)`nMilliseconds : $($stopwatch.elapsed.Milliseconds)" | Out-File -FilePath $logfile -Encoding unicode -Append}else{Write-EZLogs "Minutes      : $($stopwatch.elapsed.Minutes)`nSeconds      : $($stopwatch.elapsed.Seconds)`nMilliseconds : $($stopwatch.elapsed.Milliseconds)" -enablelogs:$enablelogs -LogTime:$false}
+  if($stoptimer)
+  {
+    $($stopwatch.stop())
+    $($stopwatch.reset()) 
+  }
+  Write-Output "###################### Logging Finished - [$(Get-Date -Format $logdateformat)] ######################`n" | Out-File -FilePath $logfile -Encoding unicode -Append
+}  
+#---------------------------------------------- 
+#endregion Stop Logging
+#----------------------------------------------
+
+#---------------------------------------------- 
 #region Use Run-As Function
 #----------------------------------------------
 function Use-RunAs 
 {    
-    # Check if script is running as Adminstrator and if not use RunAs 
-    # Use Check Switch to check if admin 
-    # http://gallery.technet.microsoft.com/scriptcenter/63fd1c0d-da57-4fb4-9645-ea52fc4f1dfb
+  # Check if script is running as Adminstrator and if not use RunAs 
+  # Use Check Switch to check if admin 
+  # http://gallery.technet.microsoft.com/scriptcenter/63fd1c0d-da57-4fb4-9645-ea52fc4f1dfb
     
-    param([Switch]$Check) 
-    $IsAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator") 
-    if ($Check) { return $IsAdmin }     
-    if ($MyInvocation.ScriptName -ne "") 
+  param([Switch]$Check) 
+  $IsAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator') 
+  if ($Check) { return $IsAdmin }     
+  if ($MyInvocation.ScriptName -ne '') 
+  {  
+    if (-not $IsAdmin)  
     {  
-        if (-not $IsAdmin)  
-        {  
-            try 
-            {  
-                $arg = "-file `"$($MyInvocation.ScriptName)`"" 
-                Start-Process "$psHome\powershell.exe" -Verb Runas -ArgumentList $arg -ErrorAction 'stop'  
-            } 
-            catch 
-            { 
-                Write-Warning "Error - Failed to restart script with runas"  
-                break               
-            } 
-            exit # Quit this session of powershell 
-        }  
+      try 
+      {  
+        $arg = "-file `"$($MyInvocation.ScriptName)`"" 
+        Start-Process "$psHome\powershell.exe" -Verb Runas -ArgumentList $arg -ErrorAction 'stop'  
+      } 
+      catch 
+      { 
+        Write-Warning 'Error - Failed to restart script with runas'  
+        break               
+      } 
+      exit # Quit this session of powershell 
     }  
-    else  
-    {  
-        write-ezlogs "Script must be saved as a .ps1 file first" -showtime -LogFile $logfile -LinesAfter 1 -Warning  
-        break  
-    }  
+  }  
+  else  
+  {  
+    Write-EZLogs 'Script must be saved as a .ps1 file first' -showtime -LogFile $logfile -LinesAfter 1 -Warning  
+    break  
+  }  
 }
 #---------------------------------------------- 
 #endregion Use Run-As Function
@@ -429,7 +437,7 @@ Function Send-Email
   [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
   # Create the email.
   $Subject = "$Subject - $env:computername"
-  write-ezlogs "Creating email with SUBJECT ($subject) FROM ($mailfrom) TO ($mailto)" -ShowTime -enablelogs:$enablelogs
+  Write-EZLogs "Creating email with SUBJECT ($subject) FROM ($mailfrom) TO ($mailto)" -ShowTime -enablelogs:$enablelogs
   $email = New-Object System.Net.Mail.MailMessage($MailFrom , $MailTo)
   $email.Subject = $Subject
   $email.IsBodyHtml = $true
@@ -439,17 +447,17 @@ See attached report
 
   if ($dashboardreport_file)
   {
-    write-ezlogs -text "Attaching HTML Dashboard Report File ($dashboardreport_file)" -ShowTime -enablelogs:$enablelogs
+    Write-EZLogs -text "Attaching HTML Dashboard Report File ($dashboardreport_file)" -ShowTime -enablelogs:$enablelogs
     $email.attachments.add($dashboardreport_file)
   }
   if($enablelogs)
   {
     $emaillog =  [System.IO.Path]::Combine($env:temp, "$($thisScript.Name)-$($thisScript.Version)-EM.log")
-    write-ezlogs -text "Attaching Log File ($emaillog)" -ShowTime -enablelogs:$enablelogs
-    $null = copy-item $logfile -Destination $emaillog -Force
+    Write-EZLogs -text "Attaching Log File ($emaillog)" -ShowTime -enablelogs:$enablelogs
+    $null = Copy-Item $logfile -Destination $emaillog -Force
     Write-Output "[$(Get-Date -Format $logdateformat)] Sending Email...."  | Out-File -FilePath $emaillog -Encoding unicode -Append
-    Write-Output "###################### Logging Finished - [$(Get-Date -Format $logdateformat)] ######################`n" | Out-File -FilePath $emaillog -Encoding unicode -Append
-    start-sleep 1    
+    Stop-Logging -ErrorSummary -logfile $emaillog -logOnly
+    Start-Sleep 1    
     $email.attachments.add($emaillog)  
   }
   
@@ -457,20 +465,20 @@ See attached report
   $SMTPClient=New-Object System.Net.Mail.SmtpClient( $SmtpServer , $SmtpPort )
   $SMTPClient.EnableSsl=$true
   $SMTPClient.Credentials=New-Object System.Net.NetworkCredential( $SmtpUser , $SmtpPassword );
-  write-ezlogs "Sending email via $SmtpServer\:$Smtpport" -showtime
+  Write-EZLogs "Sending email via $SmtpServer\:$Smtpport" -showtime
   try
   {
     $SMTPClient.Send( $email )
-    $emailstatus = "[SUCCESS] Email successfuly sent!" 
-    $emailcolor = "green"
+    $emailstatus = '[SUCCESS] Email successfuly sent!' 
+    $emailcolor = 'green'
   }
   catch
   {
     $emailstatus = "[ERROR] Sending email failed! $_"
-    $emailcolor = "red"
+    $emailcolor = 'red'
   }
   $email.Dispose();
-  write-ezlogs $emailstatus -showtime -color:$emailcolor -enablelogs:$enablelogs
+  Write-EZLogs $emailstatus -showtime -color:$emailcolor -enablelogs:$enablelogs
 }
 #---------------------------------------------- 
 #endregion Send Email Function
@@ -484,62 +492,61 @@ Function Get-DellCommand
   [CmdletBinding()]
   param(
     [switch] $ApplyAllUpdates,
+    [switch] $ApplyAllSeverity,
     [switch] $Reboot,
-    [string] $ApplyUpdateTypes
+    [string] $ApplyUpdateTypes,
+    [string] $ApplySeverityTypes
   )
-  write-ezlogs "#### Running Dell Command Update ####" -color yellow -linesbefore 1 -enablelogs:$enablelogs
-  $Computer_Info = gwmi Win32_ComputerSystem
-  if ($($computer_info.Manufacturer) -notmatch "Dell")
+  Write-EZLogs '#### Running Dell Command Update ####' -color yellow -linesbefore 1 -enablelogs:$enablelogs
+  $Computer_Info = Get-WmiObject Win32_ComputerSystem
+  if ($($computer_info.Manufacturer) -notmatch 'Dell')
   {
-      $null = write-ezlogs "The current hardware manufacturer ($($computer_info.Manufacturer)) is not detected as a Dell. Skipping Dell Command..." -ShowTime -color Red -enablelogs:$enablelogs -Warning
-      return $null
-   }
-   #Check if already installed
-   $Check_Install = Test-Path -literalpath "C:\Program Files\Dell\CommandUpdate\dcu-cli.exe"
-   if($Check_Install)
-   {
-      write-ezlogs "Dell Command Update is installed...skipping download" -ShowTime -enablelogs:$enablelogs
-   }
-   else
-   {
-     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12
-     write-ezlogs -text "Downloading Dell Command Update" -showtime -enablelogs:$enablelogs
-     # Download Dell Command Update
-     $start_time2 = Get-Date
-     $processtimeout = 300 #Amount of time in seconds to wait until process is timedout and canceled
-     $App_name = "DellCommand"
-     $dell_log = "$DownloadLocation_dell\DellCommand.log"
-     $execute_file_name = "DellCommandUpdate.exe"
-     $arguments = "/scan -report=$DownloadLocation_dell -outputlog=$dell_log"
-     $download_output_file = [System.IO.Path]::Combine($DownloadLocation_dell, $execute_file_name)  
-     #Download BrowsingHistoryView
-     try 
-     {
-       $TestDownloadLocation = Test-Path $DownloadLocation_dell
-       if (!$TestDownloadLocation) 
-       {
-         $null = new-item $DownloadLocation_dell -ItemType Directory -force
-         write-ezlogs "Creating destination directory and downloading file $downloadurl_dell" -ShowTime -enablelogs:$enablelogs 
-       }
-       else
-       {
-         write-ezlogs -text "Destination directory exists...downloading file $downloadurl_dell" -showtime -enablelogs:$enablelogs  
-       }    
-       Invoke-WebRequest -Uri $DownloadURL_dell -OutFile $download_output_file -UseBasicParsing 
-       write-ezlogs -text "Download Time taken for file $DownloadURL_dell : $((Get-Date).Subtract($start_time2).Seconds) second(s)" -ShowTime -enablelogs:$enablelogs 
-       write-ezlogs -text "$App_name downloaded to $download_output_file" -ShowTime -enablelogs:$enablelogs 
-       write-ezlogs "Installing $execute_file_name...." -ShowTime -enablelogs:$enablelogs 
-       $null = Start-Process -FilePath $download_output_file -ArgumentList '/s' -Verbose -Wait
-     }
-     catch 
-     {  
-       write-ezlogs -text "[ERROR] The download and extraction of $execute_file_name failed: $($_.Exception.Message)" -ShowTime -red -enablelogs:$enablelogs
-       exit 1
-     }  
-   }
+    $null = Write-EZLogs "The current hardware manufacturer ($($computer_info.Manufacturer)) is not detected as a Dell. Skipping Dell Command..." -ShowTime -color Red -enablelogs:$enablelogs -Warning
+    return $null
+  }
+  #Check if already installed
+  $Check_Install = Test-Path -literalpath "$env:ProgramW6432\Dell\CommandUpdate\dcu-cli.exe"
+  if($Check_Install)
+  {Write-EZLogs 'Dell Command Update is installed...skipping download' -ShowTime -enablelogs:$enablelogs}
+  else
+  {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12
+    Write-EZLogs -text 'Downloading Dell Command Update' -showtime -enablelogs:$enablelogs
+    # Download Dell Command Update
+    $start_time2 = Get-Date
+    $processtimeout = 300 #Amount of time in seconds to wait until process is timedout and canceled
+    $App_name = 'DellCommand'
+    $dell_log = "$DownloadLocation_dell\DellCommand.log"
+    $execute_file_name = 'DellCommandUpdate.exe'
+    $arguments = "/scan -report=$DownloadLocation_dell -outputlog=$dell_log"
+    $download_output_file = [System.IO.Path]::Combine($DownloadLocation_dell, $execute_file_name)  
+    #Download BrowsingHistoryView
+    try 
+    {
+      $TestDownloadLocation = Test-Path $DownloadLocation_dell
+      if (!$TestDownloadLocation) 
+      {
+        $null = New-Item $DownloadLocation_dell -ItemType Directory -force
+        Write-EZLogs "Creating destination directory and downloading file $downloadurl_dell" -ShowTime -enablelogs:$enablelogs 
+      }
+      else
+      {Write-EZLogs -text "Destination directory exists...downloading file $downloadurl_dell" -showtime -enablelogs:$enablelogs}    
+      Invoke-WebRequest -Uri $DownloadURL_dell -OutFile $download_output_file -UseBasicParsing 
+      Write-EZLogs -text "Download Time taken for file $DownloadURL_dell : $((Get-Date).Subtract($start_time2).Seconds) second(s)" -ShowTime -enablelogs:$enablelogs 
+      Write-EZLogs -text "$App_name downloaded to $download_output_file" -ShowTime -enablelogs:$enablelogs 
+      Write-EZLogs "Installing $execute_file_name...." -ShowTime -enablelogs:$enablelogs 
+      $null = Start-Process -FilePath $download_output_file -ArgumentList '/s' -Verbose -Wait
+    }
+    catch 
+    {  
+      Write-EZLogs -text "[ERROR] The download and extraction of $execute_file_name failed: $($_.Exception.Message)" -ShowTime -red -enablelogs:$enablelogs
+      exit 1
+    }  
+  }
   $DCU_Args = $null
   $block = $Null
-  $DCU_Args = "/scan -report=$DownloadLocation_dell -outputlog=$DownloadLocation_dell\DellCommand.log"
+  $DCU_Args = "/scan -report=$DownloadLocation_dell -silent -outputlog=$DownloadLocation_dell\DellCommand.log"
+  write-ezlogs "Starting process: $env:ProgramW6432\Dell\CommandUpdate\dcu-cli.exe $DCU_Args"  -showtime -color Cyan
   $block = 
   {
     Param
@@ -551,21 +558,25 @@ Function Get-DellCommand
       
     )
     #Run Dell Command Update process
-    $proc = start-process "C:\Program Files\Dell\CommandUpdate\dcu-cli.exe" -ArgumentList $using:DCU_Args -Wait -WindowStyle Hidden
-    #$proc = Start-Process "C:\Program Files\Dell\CommandUpdate\dcu-cli.exe" -Wait -Argumentlist "/scan -report=$DownloadLocation_dell -outputlog=$DownloadLocation_dell\DellCommand.log" -WindowStyle Hidden #-PassThru
+    $proc = Start-Process "$env:ProgramW6432\Dell\CommandUpdate\dcu-cli.exe" -ArgumentList $using:DCU_Args -Wait -WindowStyle Hidden
     $proc | Wait-Process -Timeout 400 -ErrorAction Continue -ErrorVariable timeouted
     if ($timeouted)
     {
       # terminate the process
-      $proc | kill
-      write-ezlogs -text "Process failed to finish before the timeout period and was canceled. Removing downloaded file and exiting" -color red -enablelogs:$using:enablelogs
-      write-ezlogs -text "Timedout: $timeouted" -color red -enablelogs:$using:enablelogs
+      $proc | Stop-Process
+      Write-Output 'EZT-ERROR: Process failed to finish before the timeout period and was canceled. Removing downloaded file and exiting'  | Out-File -FilePath "$using:DownloadLocation_dell\DellCommand.log" -Encoding unicode -Append
+      Write-host   'Process failed to finish before the timeout period and was canceled. Removing downloaded file and exiting' -ForegroundColor red
+      Write-Output "Timedout: $timeouted"  | Out-File -FilePath $using:logfile -Encoding unicode -Append
+      Write-host   "Timedout: $timeouted" -ForegroundColor red
       $Null = Remove-Item $DownloadLocation_dell -Recurse
       exit
     }
     elseif ($proc.ExitCode -ne 0)
     {
-      Write-EZLogs -text "Process Exit Code: $($proc.ExitCode)" -showtime -Warning -LogFile $using:logfile
+      Write-Output "EZT-ERROR: The process did not exit cleanly or may have had an error"  | Out-File -FilePath "$using:DownloadLocation_dell\DellCommand.log" -Encoding unicode -Append
+      Write-Output "Process Exit Code: $($proc.ExitCode)"  | Out-File -FilePath $using:logfile -Encoding unicode -Append
+      Write-host "Process Exit Code: $($proc.ExitCode)"
+      exit
     }     
   }   
    
@@ -575,37 +586,32 @@ Function Get-DellCommand
   
   #Start the jobs. Max 4 jobs running simultaneously.
   While ($(Get-Job -state running).count -ge $MaxThreads)
-  {
-    Start-Sleep -Milliseconds 3
-  }
-  write-ezlogs -text ">>>> Running Dell Command Update`n" -showtime -color cyan -enablelogs:$enablelogs
+  {Start-Sleep -Milliseconds 3}
+  Write-EZLogs -text ">>>> Running Dell Command - Scan Only`n" -showtime -color cyan -enablelogs:$enablelogs
   $dellupdates_code = $Null
   $Null = Start-Job -Scriptblock $Block -ArgumentList $DownloadLocation_dell,$dell_log,$enablelogs,$DCU_Args
-  write-ezlogs "-----------DellCommand Log Entries-----------" -enablelogs:$enablelogs           
+  Write-EZLogs '-----------DellCommand Log Entries-----------' -enablelogs:$enablelogs           
   #Wait for all jobs to finish.
   While ($(Get-Job -State Running).count -gt 0)
   {
     #Check last line of the log, if it matches our exit trigger text, sleep until it changes indicating new log entries are being added
     if (!(Test-Path "$DownloadLocation_dell\DellCommand.log"))
-    {
-      start-sleep -Milliseconds 3
-    }
+    {Start-Sleep -Milliseconds 3}
     else
     {
       $last_line = Get-Content -Path "$DownloadLocation_dell\DellCommand.log" -force -Tail 1 2> $Null
-      if($last_line -match "Program exited with return code:")
-      {
-        start-sleep -Milliseconds 3
-      }
+      if($last_line -match 'Program exited with return code:')
+      {Start-Sleep -Milliseconds 3}
       #Watch the log file and output all new lines. If the new line matches our exit trigger text, break out of wait
       $count = 0
       Get-Content -Path "$DownloadLocation_dell\DellCommand.log" -force -Tail 1 -wait  | ForEach-Object {
         $count++
-        write-ezlogs "$_" -enablelogs:$enablelogs
-        if($_ -match "The program exited with return code: 500 "){ $dellexit_code = 500 ;break}
-        if($_ -match "Number of applicable updates for the current system configuration:"){ $dellupdates_code = $_.Substring(($_.IndexOf("configuration: ")+15))}
-        if($_ -match "The program exited with return code: 0 "){ $dellexit_code = 0 ;break}  
-        if($_ -match "Program exited with return code:" -and $_ -notmatch "Exiting with exit code: InvalidParameters"){break}
+        Write-EZLogs "$_" -enablelogs:$enablelogs
+        if($_ -match 'The program exited with return code: 500 '){ $dellexit_code = 500 ;break}
+        if($_ -match 'EZT-ERROR'){ $dellexit_code = 2 ;break}  
+        if($_ -match 'Number of applicable updates for the current system configuration:'){ $dellupdates_code = $_.Substring(($_.IndexOf('configuration: ')+15))}
+        if($_ -match 'The program exited with return code: 0 '){ $dellexit_code = 0 ;break}  
+        if($_ -match 'Program exited with return code:' -and $_ -notmatch 'Exiting with exit code: InvalidParameters'){break}
         if($(Get-Job -State Running).count -eq 0){$delljob_code = 0;break }
       }
     }      
@@ -613,76 +619,250 @@ Function Get-DellCommand
   
   #Get information from each job.
   foreach($job in Get-Job)
-  {
-    $info=Receive-Job -Id ($job.Id)
-  }
+  {$info=Receive-Job -Id ($job.Id)}
   
   #Remove all jobs created.
   Get-Job | Remove-Job -Force 
-  write-ezlogs "---------------END Log Entries---------------" -enablelogs:$enablelogs
-  write-ezlogs -text ">>>> Dell Command Finished. Final loop count: $count" -showtime -enablelogs:$enablelogs -color Cyan
+  Write-EZLogs '---------------END Log Entries---------------' -enablelogs:$enablelogs
+  Write-EZLogs -text ">>>> Dell Command Finished. Final loop count: $count" -showtime -enablelogs:$enablelogs -color Cyan
   $dellupdates_code = $dellupdates_code.trim()
   if($dellexit_code -eq 500)
   {
-    write-ezlogs "[INFO] Dell Command found no updates that are available for this system" -showtime -enablelogs:$enablelogs -color Cyan
+    Write-EZLogs '[INFO] Dell Command found no updates that are available for this system' -showtime -enablelogs:$enablelogs -color Cyan
     return $false
   }
   elseif($dellupdates_code)
-  {
-    write-ezlogs "[INFO] Dell Command found $dellupdates_code updates that are available for this system" -showtime -enablelogs:$enablelogs -color Cyan
-  }
+  {Write-EZLogs "[INFO] Dell Command found $dellupdates_code updates that are available for this system" -showtime -enablelogs:$enablelogs -color Cyan}
   try
-  {
-    [xml]$XMLReport = get-content "$DownloadLocation_dell\DCUApplicableUpdates.xml" -ErrorAction stop
-  }
+  {[xml]$XMLReport = Get-Content "$DownloadLocation_dell\DCUApplicableUpdates.xml" -ErrorAction stop}
   catch
   {
-    write-ezlogs "[ERROR] Unable to process DCUApplicableUpdates.xml - $_" -ShowTime -color red -enablelogs:$enablelogs
+    Write-EZLogs "[ERROR] Unable to process DCUApplicableUpdates.xml - $_" -ShowTime -color red -enablelogs:$enablelogs
     return $false
   }
   
   $AvailableUpdates = $XMLReport.updates.update
-  $BIOSUpdates = ($XMLReport.updates.update | Where-Object { $_.type -eq "BIOS" }).name.Count
-  $ApplicationUpdates = ($XMLReport.updates.update | Where-Object { $_.type -eq "Application" }).name.Count
-  $DriverUpdates = ($XMLReport.updates.update | Where-Object { $_.type -eq "Driver" }).name.Count
-  $FirmwareUpdates = ($XMLReport.updates.update | Where-Object { $_.type -eq "Firmware" }).name.Count
-  $OtherUpdates = ($XMLReport.updates.update | Where-Object { $_.type -eq "Other" }).name.Count
-  $PatchUpdates = ($XMLReport.updates.update | Where-Object { $_.type -eq "Patch" }).name.Count
-  $UtilityUpdates = ($XMLReport.updates.update | Where-Object { $_.type -eq "Utility" }).name.Count
-  $UrgentUpdates = ($XMLReport.updates.update | Where-Object { $_.Urgency -eq "Urgent" }).name.Count
+  $BIOSUpdates = ($XMLReport.updates.update | Where-Object { $_.type -eq 'BIOS' }).name.Count
+  $ApplicationUpdates = ($XMLReport.updates.update | Where-Object { $_.type -eq 'Application' }).name.Count
+  $DriverUpdates = ($XMLReport.updates.update | Where-Object { $_.type -eq 'Driver' }).name.Count
+  $FirmwareUpdates = ($XMLReport.updates.update | Where-Object { $_.type -eq 'Firmware' }).name.Count
+  $OtherUpdates = ($XMLReport.updates.update | Where-Object { $_.type -eq 'Other' }).name.Count
+  $PatchUpdates = ($XMLReport.updates.update | Where-Object { $_.type -eq 'Patch' }).name.Count
+  $UtilityUpdates = ($XMLReport.updates.update | Where-Object { $_.type -eq 'Utility' }).name.Count
+  $UrgentUpdates = ($XMLReport.updates.update | Where-Object { $_.Urgency -eq 'Urgent' }).name.Count
   
-  if($BIOSUpdates){write-ezlogs "BIOS Updates: $BIOSUpdates" -showtime -enablelogs:$enablelogs}
-  if($ApplicationUpdates){write-ezlogs "Application Updates: $ApplicationUpdates" -showtime -enablelogs:$enablelogs}
-  if($DriverUpdates){write-ezlogs "Driver Updates: $DriverUpdates" -showtime -enablelogs:$enablelogs}
-  if($FirmwareUpdates){write-ezlogs "Firmware Updates: $FirmwareUpdates" -showtime -enablelogs:$enablelogs}
-  if($OtherUpdates){write-ezlogs "Other Updates: $OtherUpdates" -showtime -enablelogs:$enablelogs}
-  if($PatchUpdates){write-ezlogs "Patch Updates: $PatchUpdates" -showtime -enablelogs:$enablelogs}
-  if($UtilityUpdates){write-ezlogs "Utility Updates: $UtilityUpdates" -showtime -enablelogs:$enablelogs}
-  if($UrgentUpdates){write-ezlogs "Urgent Updates: $UrgentUpdates" -showtime -enablelogs:$enablelogs}
+  if($BIOSUpdates){Write-EZLogs "BIOS Updates: $BIOSUpdates" -showtime -enablelogs:$enablelogs}
+  if($ApplicationUpdates){Write-EZLogs "Application Updates: $ApplicationUpdates" -showtime -enablelogs:$enablelogs}
+  if($DriverUpdates){Write-EZLogs "Driver Updates: $DriverUpdates" -showtime -enablelogs:$enablelogs}
+  if($FirmwareUpdates){Write-EZLogs "Firmware Updates: $FirmwareUpdates" -showtime -enablelogs:$enablelogs}
+  if($OtherUpdates){Write-EZLogs "Other Updates: $OtherUpdates" -showtime -enablelogs:$enablelogs}
+  if($PatchUpdates){Write-EZLogs "Patch Updates: $PatchUpdates" -showtime -enablelogs:$enablelogs}
+  if($UtilityUpdates){Write-EZLogs "Utility Updates: $UtilityUpdates" -showtime -enablelogs:$enablelogs}
+  if($UrgentUpdates){Write-EZLogs "Urgent Updates: $UrgentUpdates" -showtime -enablelogs:$enablelogs}
   
-  foreach ($update in $AvailableUpdates)
+  ### Compare updates found vs whats configured and install
+  $ApplyUpdate_Array = $ApplyUpdateTypes.split(',')
+  if($ApplyAllUpdates)
   {
-    $filename = split-path $($update.file) -Leaf
-    if($update.urgency -match "Recommended")
+    $updates_types_toinstall = $AvailableUpdates.type
+  }
+  else
+  {
+    $updates_types_toinstall = Compare-Object $AvailableUpdates.type -DifferenceObject $ApplyUpdate_Array -IncludeEqual -ExcludeDifferent -passthru
+  }
+  if($AvailableUpdates.urgency -contains "urgent" -and $applySeverityTypes -match "critical"){$applySeverityTypes_Search = $applySeverityTypes -replace "critical","urgent"}else{$applySeverityTypes_Search = $applySeverityTypes}
+  $applySeverityTypes_Search_Array = $applySeverityTypes_Search.split(',')
+  if($ApplyAllSeverity)
+  {
+    $updates_severity_toinstall = $($AvailableUpdates.urgency + ($AvailableUpdates.category | where {$_ -eq 'Security'}))
+  }
+  else
+  {
+    $updates_severity_toinstall = Compare-Object $($AvailableUpdates.urgency + ($AvailableUpdates.category | where {$_ -eq 'Security'})) -DifferenceObject $applySeverityTypes_Search_Array -IncludeEqual -ExcludeDifferent -passthru
+  }
+  Write-EZLogs "Availabe Update Types Found: $($AvailableUpdates.type | Select-Object -Unique)" -ShowTime -enablelogs:$enablelogs
+  Write-EZLogs "Selected Update Types to install: $($ApplyUpdate_Array)" -ShowTime -enablelogs:$enablelogs
+  Write-EZLogs "Availabe Update Severity Types Found: $($AvailableUpdates.urgency + ($AvailableUpdates.category | where {$_ -eq 'Security'}) | Select-Object -Unique)" -ShowTime -enablelogs:$enablelogs
+  Write-EZLogs "Selected Update Severity Types to install: $($applySeverityTypes_Search_Array)" -ShowTime -enablelogs:$enablelogs
+  
+  if($ApplyAllUpdates -and $ApplyAllSeverity)
+  {
+    $updates_will_install = $AvailableUpdates
+    $InstallUpdates = $true
+    write-EZLogs ">>>> Updates found that will be installed" -showtime -enablelogs:$enablelogs
+    foreach ($u in $AvailableUpdates)
     {
-      $urgency_msg = "Dell recommends applying this update during your next scheduled update cycle. The update contains feature enhancements or changes that will help keep your system software current and compatible with other system modules (firmware, BIOS, drivers and software)."
-    }
-    elseif($update.urgency -match "Urgent")
+      write-ezlogs "$($u.name)`n | Type: $($u.type)`n | Severity: $($u.urgency)"  -enablelogs:$enablelogs
+    } 
+  }
+  else
+  {
+    $updates_will_install = $AvailableUpdates | where {$($updates_severity_toinstall) -contains $_.urgency -and $($updates_types_toinstall) -contains $_.type -or $($updates_severity_toinstall) -contains $_.category -and $($updates_types_toinstall) -contains $_.type }
+    if($updates_will_install)
     {
-      $urgency_msg = "Dell highly recommends applying this update as soon as possible. The update contains changes to improve the reliability and availability of your Dell system."
-    }
-    elseif($update.urgency -match "Optional")
+      $InstallUpdates = $true
+      write-EZLogs ">>>> Updates found that will be installed" -showtime -enablelogs:$enablelogs
+      foreach ($in in $updates_will_install)
+      {
+        write-ezlogs "$($in.name)`n | Type: $($in.type)`n | Severity: $($in.urgency)"  -enablelogs:$enablelogs
+      }    
+    }  
+    else
     {
-      $urgency_msg = "Dell recommends the customer review specifics about the update to determine if it applies to your system. The update contains changes that impact only certain configurations, or provides new features that may/may not apply to your environment."
+      $InstallUpdates = $false
+      write-EZLogs ">>>> No updates found that will be installed" -showtime -enablelogs:$enablelogs
+    }  
+  }
+  if($AvailableUpdates -and $InstallUpdates)
+  {
+    Write-EZLogs -text "`n#### Installing Available Updates ####" -color yellow -enablelogs:$enablelogs -LogTime:$false
+    if ($reboot)
+    {
+      $rebootarg = 'enable'
+      $reboot_msg1 = '>>>> A reboot will occur automatically after installation of updates'
     }
     else
     {
-      $urgency_msg = $Null
+      $rebootarg='disable'
+      $reboot_msg1 = '>>>> No reboot will occur automatically'
     }
+    if($ApplyAllUpdates)
+    {
+      $updates_types_toinstall_arg = $null
+    }
+    elseif($updates_types_toinstall)
+    {
+      $updates_types_toinstall_arg = "-updateType=$ApplyUpdateTypes"
+    }
+    if($ApplyAllSeverity)
+    {
+      $updates_severity_toinstall_arg = $null
+    }
+    elseif($updates_severity_toinstall)
+    {
+      $updates_severity_toinstall_arg = "-updateSeverity=$ApplySeverityTypes"
+    }
+   
+    if($updates_types_toinstall_arg -and $updates_severity_toinstall_arg)
+    {
+      $updates_toinstall_arg = $updates_types_toinstall_arg + " " + "-updateSeverity=$ApplySeverityTypes"
+    }
+    elseif($updates_severity_toinstall_arg)
+    {
+      $updates_toinstall_arg = $updates_severity_toinstall_arg
+    }
+    else
+    {
+      $updates_types_toinstall_arg = $updates_types_toinstall_arg
+    }
+      try
+      {
+        $dell_warnings = $null
+        $DCU_Args = "/applyUpdates -autoSuspendBitLocker=enable $updates_toinstall_arg -silent -reboot=$rebootarg -outputlog=$DownloadLocation_dell\DellCommand.log"
+		write-ezlogs "Starting process: $env:ProgramW6432\Dell\CommandUpdate\dcu-cli.exe $DCU_Args"  -showtime -color Cyan
+        #write-ezlogs "Simulating successful install" -showtime -color Cyan
+        #$dellexit_code = 11
+        ########################################################################################################
+            Get-Job | Remove-Job -Force
+            $MaxThreads = 3
+            While ($(Get-Job -state running).count -ge $MaxThreads)
+            {Start-Sleep -Milliseconds 3}
+            Write-EZLogs -text ">>>> Running Dell Command - Apply Updates`n" -showtime -color cyan -enablelogs:$enablelogs
+            $Null = Start-Job -Scriptblock $Block -ArgumentList $DownloadLocation_dell,$dell_log,$enablelogs,$DCU_Args
+            Write-EZLogs '-----------DellCommand Log Entries-----------' -enablelogs:$enablelogs           
+            #Wait for all jobs to finish.
+            While ($(Get-Job -State Running).count -gt 0)
+            {
+            #Check last line of the log, if it matches our exit trigger text, sleep until it changes indicating new log entries are being added
+            if (!(Test-Path "$DownloadLocation_dell\DellCommand.log"))
+            {Start-Sleep -Milliseconds 3}
+            else
+            {
+            $last_line = Get-Content -Path "$DownloadLocation_dell\DellCommand.log" -force -Tail 1 2> $Null
+            if($last_line -match 'Program exited with return code:')
+            {Start-Sleep -Milliseconds 2}
+            #Watch the log file and output all new lines. If the new line matches our exit trigger text, break out of wait
+            $count2 = 0
+            Get-Content -Path "$DownloadLocation_dell\DellCommand.log" -force -Tail 1 -wait  | ForEach-Object {
+              $count2++
+              Write-EZLogs "$_" -enablelogs:$enablelogs
+              if($_ -match 'The program exited with return code: 500 '){ $dellexit_code = 500 ;break}
+              if($_ -match 'EZT-ERROR'){ $dellexit_code = 2 ;break} 
+              if($_ -match 'Finished installing the updates'){ $dellupdates_code = 11}
+              if($_ -match 'Pending self-update installation for these updates, will get installed after a system reboot'){ $dellreboot_code = 1;$reboot_msg = '>>>> Self-update installations will complete after a system reboot'}
+              if($_ -match 'The system has been updated and requires a reboot to complete the process.'){ $dellreboot_code = 2;$reboot_msg = '>>>> A reboot is required to complete the update process'}
+              if($_ -match 'Warning:'){$dell_warnings += "$_"}
+              if($_ -match 'Error'){$dell_errors += "$_"}
+              if($_ -match 'The program exited with return code: 0 '){ $dellexit_code = 0 ;break}  
+              if($_ -match 'Program exited with return code:' -and $_ -notmatch 'Exiting with exit code: InvalidParameters'){break} 
+              if($(Get-Job -State Running).count -eq 0){$delljob_code = 0;break }
+            }
+            }      
+            }
+  
+            #Get information from each job.
+            foreach($job in Get-Job)
+            {$info=Receive-Job -Id ($job.Id)}
+  
+            #Remove all jobs created.
+            Get-Job | Remove-Job -Force 
+            Write-EZLogs '---------------END Log Entries---------------' -enablelogs:$enablelogs
+            Write-EZLogs -text ">>>> Dell Command Finished. Final loop count: $count2" -showtime -enablelogs:$enablelogs -color Cyan 
+        ########################################################################################################
+
+        if($dellupdates_code -eq 11)
+        {
+          Write-EZLogs '[INFO] Dell Command finished installing updates' -showtime -enablelogs:$enablelogs -color Cyan
+        }
+		elseif($dellexit_code -eq 500)
+        {
+          Write-EZLogs '[INFO] The system is up to date or no updates were found for the provided filters. Modify the filters and re-run the commands' -showtime -enablelogs:$enablelogs -color Cyan
+          return $false
+        }
+        if($dell_warnings)
+        {
+          Write-EZLogs "Dell Command had the following warnings...." -showtime -enablelogs:$enablelogs
+          foreach($w in $dell_warnings)
+          {
+            Write-EZLogs $w -showtime -enablelogs:$enablelogs -Warning
+          }
+        }
+        if($dell_errors)
+        {
+          Write-EZLogs "Dell Command had the following errors...." -showtime -enablelogs:$enablelogs
+          foreach($e in $dell_errors)
+          {
+            Write-EZLogs $e -showtime -enablelogs:$enablelogs -color Red
+          }
+        }      
+        if($reboot_msg){Write-EZLogs -text $reboot_msg -ShowTime -Color Cyan -enablelogs:$enablelogs}
+        Write-EZLogs -text $reboot_msg1 -ShowTime -Color Cyan -enablelogs:$enablelogs 
+      }
+      catch
+      {
+        Write-EZLogs "[ERROR] An exception occurred while trying to apply updates: $($_.exception.message)`n$($_.InvocationInfo.positionmessage)`n$($_.ScriptStackTrace)" -showtime -color red -enablelogs:$enablelogs
+      }
+    }
+    else
+    {
+      Write-EZLogs -text '>>>> No available updates match the types specified to install or none were configured, we are done here' -ShowTime -Color Cyan -enablelogs:$enablelogs
+    }
+
+    foreach ($update in $AvailableUpdates)
+    {
+      $filename = Split-Path $($update.file) -Leaf
+      if($update.urgency -match 'Recommended')
+      {$urgency_msg = 'Dell recommends applying this update during your next scheduled update cycle. The update contains feature enhancements or changes that will help keep your system software current and compatible with other system modules (firmware, BIOS, drivers and software).'}
+      elseif($update.urgency -match 'Urgent')
+      {$urgency_msg = 'Dell highly recommends applying this update as soon as possible. The update contains changes to improve the reliability and availability of your Dell system.'}
+      elseif($update.urgency -match 'Optional')
+      {$urgency_msg = 'Dell recommends the customer review specifics about the update to determine if it applies to your system. The update contains changes that impact only certain configurations, or provides new features that may/may not apply to your environment.'}
+      else
+      {$urgency_msg = $Null}
  
-    if($urgency_msg)
-    {   
-      $urgency_link = @"
+      if($urgency_msg)
+      {   
+        $urgency_link = @"
 <style>
 .popup {
   position: relative;
@@ -772,144 +952,41 @@ Function Get-DellCommand
     <a href=# id=b1>$($update.urgency)</a>
     <span class=popuptext id=myPopup>$urgency_msg</span>
   </span>
-"@.replace("`n","")
-    }
-    else
-    {
-      $urgency_link = $update.urgency
-    }   
-    $dellcommandOutput  = New-Object -Type PSObject
-    $dellcommandOutput | Add-Member -MemberType NoteProperty -Name "DisplayName" -Value $update.name
-    $dellcommandOutput | Add-Member -MemberType NoteProperty -Name "Name" -Value "<a href='https://www.dell.com/support/home/en-us/drivers/driversdetails?driverid=$($update.release)' target='_blank'>$($update.name)</a>"
-    $dellcommandOutput | Add-Member -MemberType NoteProperty -Name "Release" -Value $update.release
-    $dellcommandOutput | Add-Member -MemberType NoteProperty -Name "Version" -Value $update.version
-    $dellcommandOutput | Add-Member -MemberType NoteProperty -Name "Release Date" -Value $update.date
-    $dellcommandOutput | Add-Member -MemberType NoteProperty -Name "Urgency" -Value $urgency_link
-    $dellcommandOutput | Add-Member -MemberType NoteProperty -Name "Type" -Value $update.type
-    $dellcommandOutput | Add-Member -MemberType NoteProperty -Name "Category" -Value $update.category
-    $dellcommandOutput | Add-Member -MemberType NoteProperty -Name "File Name" -Value $update.file
-    $dellcommandOutput | Add-Member -MemberType NoteProperty -Name "File Size" -Value ("{0:N2}MB" -f ($update.bytes/1MB)) 
-    $dellcommandOutput | Add-Member -MemberType NoteProperty -Name "Download" -Value "<a href='https://dl.dell.com/$($update.file)' target='_blank'>$filename</a>"
-    $dellcommandOutput
-  }
-  $ApplyUpdate_Array = $ApplyUpdateTypes.split(",")
-  $updates_types_toinstall = compare-object $AvailableUpdates.type -DifferenceObject $ApplyUpdate_Array -IncludeEqual -ExcludeDifferent -passthru
-  if($AvailableUpdates.type)
-  {
-    write-ezlogs "Availabe Update Types Found: $($AvailableUpdates.type | Select-Object -Unique)" -ShowTime -enablelogs:$enablelogs
-  }
-  if($ApplyUpdate_Array)
-  {
-    write-ezlogs "Selected Update Types to install: $($ApplyUpdate_Array)" -ShowTime -enablelogs:$enablelogs
-  }
-  if($ApplyAllUpdates)
-  {
-    $InstallUpdates = $true
-    write-ezlogs "Selected Update Types to install: All" -ShowTime -enablelogs:$enablelogs
-    write-ezlogs "Update Types to be installed: $($AvailableUpdates.type | Select-Object -Unique)" -ShowTime -enablelogs:$enablelogs
-  }
-  elseif($updates_types_toinstall)
-  {
-    $InstallUpdates = $true
-    write-ezlogs "Update Types to be installed: $updates_types_toinstall" -ShowTime -enablelogs:$enablelogs
-  }
-  else
-  {
-    $InstallUpdates = $false
-  }
-  if($AvailableUpdates -and $InstallUpdates)
-  {
-    write-ezlogs -text "`n#### Intalling Available Updates ####" -color yellow -enablelogs:$enablelogs -LogTime:$false
-    if ($reboot)
-    {
-      $rebootarg = "enable"
-      $reboot_msg1 = ">>>> A reboot will occur automatically after installation of updates"
-    }
-    else
-    {
-      $rebootarg="disable"
-      $reboot_msg1 = ">>>> No reboot will occur automatically"
-    }
-    if($ApplyAllUpdates)
-    {
-      $updates_types_toinstall_arg = $null
-    }
-    else
-    {
-      $updates_types_toinstall_arg = "-updateType=$ApplyUpdateTypes"
-    }
-    try
-    {
-      $Global:DCU_Args = "/applyUpdates -autoSuspendBitLocker=enable $updates_types_toinstall_arg -reboot=$rebootarg -outputlog=$DownloadLocation_dell\DellCommand.log"
-      Get-Job | Remove-Job -Force
-      $MaxThreads = 3
-      
-      While ($(Get-Job -state running).count -ge $MaxThreads)
-      {
-        Start-Sleep -Milliseconds 3
+"@.replace("`n",'')
       }
-      write-ezlogs -text ">>>> Running Dell Command Update`n" -showtime -color cyan -enablelogs:$enablelogs
-      $Null = Start-Job -Scriptblock $Block -ArgumentList $DownloadLocation_dell,$dell_log,$enablelogs,$DCU_Args
-      write-ezlogs "-----------DellCommand Log Entries-----------" -enablelogs:$enablelogs           
-      #Wait for all jobs to finish.
-      While ($(Get-Job -State Running).count -gt 0)
+      else
+      {$urgency_link = $update.urgency} 
+      if($InstallUpdates -and $dellupdates_code -eq 11)
       {
-        #Check last line of the log, if it matches our exit trigger text, sleep until it changes indicating new log entries are being added
-        if (!(Test-Path "$DownloadLocation_dell\DellCommand.log"))
+        if($($updates_will_install.name) -contains $update.name)
         {
-          start-sleep -Milliseconds 3
+          $installed_status = "Installed"
         }
         else
         {
-          $last_line = Get-Content -Path "$DownloadLocation_dell\DellCommand.log" -force -Tail 1 2> $Null
-          if($last_line -match "Program exited with return code:")
-          {
-            start-sleep -Milliseconds 2
-          }
-          #Watch the log file and output all new lines. If the new line matches our exit trigger text, break out of wait
-          $count2 = 0
-          Get-Content -Path "$DownloadLocation_dell\DellCommand.log" -force -Tail 1 -wait  | ForEach-Object {
-            $count2++
-            write-ezlogs "$_" -enablelogs:$enablelogs
-            if($_ -match "The program exited with return code: 500 "){ $dellexit_code = 500 ;break}
-            if($_ -match "Finished installing the updates"){ $dellupdates_code = 11}
-            if($_ -match "Pending self-update installation for these updates, will get installed after a system reboot"){ $dellreboot_code = 1;$reboot_msg = ">>>> Self-update installations will complete after a system reboot"}
-            if($_ -match "The system has been updated and requires a reboot to complete the process."){ $dellreboot_code = 2;$reboot_msg = ">>>> A reboot is required to complete the update process"}
-            if($_ -match "Warning:"){$dell_warnings += "$_"}
-            if($_ -match "The program exited with return code: 0 "){ $dellexit_code = 0 ;break}  
-            if($_ -match "Program exited with return code:" -and $_ -notmatch "Exiting with exit code: InvalidParameters"){break} 
-            if($(Get-Job -State Running).count -eq 0){$delljob_code = 0;break }
-          }
-        }      
+          $installed_status = "Available - Not Selected to Install"
+        }
       }
-  
-      #Get information from each job.
-      foreach($job in Get-Job)
+      else
       {
-        $info=Receive-Job -Id ($job.Id)
+        $installed_status = "Available to Install"
       }
-  
-      #Remove all jobs created.
-      Get-Job | Remove-Job -Force 
-      write-ezlogs "---------------END Log Entries---------------" -enablelogs:$enablelogs
-      write-ezlogs -text ">>>> Dell Command Finished. Final loop count: $count2" -showtime -enablelogs:$enablelogs -color Cyan      
-      if($dellexit_code -eq 11)
-      {
-        write-ezlogs "[INFO] Dell Command finished installing updates" -showtime -enablelogs:$enablelogs -color Cyan
-      }      
-      #start-process "C:\Program Files\Dell\CommandUpdate\dcu-cli.exe" -ArgumentList "/applyUpdates -autoSuspendBitLocker=enable $updates_types_toinstall_arg -reboot=$rebootarg -outputlog=$DownloadLocation_dell\DellCommand.log" -Wait -WindowStyle Hidden
-      write-ezlogs -text $reboot_msg -ShowTime -Color Cyan -enablelogs:$enablelogs
-      write-ezlogs -text $reboot_msg1 -ShowTime -Color Cyan -enablelogs:$enablelogs 
+      
+      $dellcommandOutput  = New-Object -Type PSObject
+      $dellcommandOutput | Add-Member -MemberType NoteProperty -Name 'DisplayName' -Value $update.name
+      $dellcommandOutput | Add-Member -MemberType NoteProperty -Name 'Name' -Value "<a href='https://www.dell.com/support/home/en-us/drivers/driversdetails?driverid=$($update.release)' target='_blank'>$($update.name)</a>"
+      $dellcommandOutput | Add-Member -MemberType NoteProperty -Name 'Status' -Value $installed_status
+      $dellcommandOutput | Add-Member -MemberType NoteProperty -Name 'Release' -Value $update.release
+      $dellcommandOutput | Add-Member -MemberType NoteProperty -Name 'Version' -Value $update.version
+      $dellcommandOutput | Add-Member -MemberType NoteProperty -Name 'Release Date' -Value $update.date
+      $dellcommandOutput | Add-Member -MemberType NoteProperty -Name 'Urgency' -Value $urgency_link
+      $dellcommandOutput | Add-Member -MemberType NoteProperty -Name 'Type' -Value $update.type
+      $dellcommandOutput | Add-Member -MemberType NoteProperty -Name 'Category' -Value $update.category
+      $dellcommandOutput | Add-Member -MemberType NoteProperty -Name 'File Name' -Value $update.file
+      $dellcommandOutput | Add-Member -MemberType NoteProperty -Name 'File Size' -Value ('{0:N2}MB' -f ($update.bytes/1MB)) 
+      $dellcommandOutput | Add-Member -MemberType NoteProperty -Name 'Download' -Value "<a href='https://dl.dell.com/$($update.file)' target='_blank'>$filename</a>"
+      $dellcommandOutput
     }
-    catch
-    {
-      write-ezlogs "[ERROR] An exception occurred while trying to apply updates: $($_.exception.message)`n$($_.InvocationInfo.positionmessage)`n$($_.ScriptStackTrace)" -showtime -color red -enablelogs:$enablelogs
-    }
-  }
-  else
-  {
-    write-ezlogs -text ">>>> No available updates match the types specified to install or none were configured, we are done here" -ShowTime -Color Cyan -enablelogs:$enablelogs
-  }
 }
 #---------------------------------------------- 
 #endregion Dell Command Function
@@ -929,15 +1006,16 @@ Function Get-DellCommand
 if ($runDellCommand)
 {
   #Ensure the script runs with elevated priviliges
-  if($InstallDellCommand_Drivers_reboot -eq 1){$reboot_arg = $true}else{$reboot_arg = $false}
   Use-RunAs
-  if($installDellCommand_Drivers_Types -and $installDellCommand_Drivers_Types -notmatch "All")
+  if($InstallDellCommand_Update_reboot -eq 1){$reboot_arg = $true}else{$reboot_arg = $false}
+  if(!$installDellCommand_Update_Severity -or $installDellCommand_Update_Severity -match 'All'){$ApplyAllSeverityTypes = $true}else{$ApplyAllSeverityTypes = $false}
+  if($installDellCommand_Update_Types -and $installDellCommand_Update_Types -notmatch 'All')
   {
-    $dellcommand_results = Get-DellCommand -ApplyUpdateTypes $installDellCommand_Drivers_Types -reboot:$reboot_arg
+     $dellcommand_results = Get-DellCommand -ApplyUpdateTypes $installDellCommand_Update_Types -ApplyAllSeverity:$ApplyAllSeverityTypes -ApplySeverityTypes $installDellCommand_Update_Severity -reboot:$reboot_arg
   }  
-  elseif ($installDellCommand_Drivers_Types -match "All")
+  elseif ($installDellCommand_Update_Types -match 'All')
   {
-     $dellcommand_results = Get-DellCommand -ApplyAllUpdates -reboot:$reboot_arg
+    $dellcommand_results = Get-DellCommand -ApplyAllUpdates -ApplyUpdateTypes $installDellCommand_Update_Types -ApplyAllSeverity:$ApplyAllSeverityTypes -ApplySeverityTypes $installDellCommand_Update_Severity -reboot:$reboot_arg
   }
   else
   {
@@ -955,110 +1033,106 @@ if($dashboardreport -eq 1){$create_report = $true}else{$create_report = $false}
 if($opendashboardreport -eq 1){$open_report = $true}else{$open_report = $false}
 if ($create_report -and $dellcommand_results)
 {
-  write-ezlogs -Text "`n#### Generating HTML Report ####" -Color yellow -enablelogs:$enablelogs
+  Write-EZLogs -Text "`n#### Generating HTML Report ####" -Color yellow -enablelogs:$enablelogs
   $dellcommand_results_dash_all = $dellcommand_results | Select-Object * | Sort-Object 'Date' -Descending
-  $dellcommand_results_dash_drivers = $dellcommand_results | Select-Object * | where {$_.type -eq "Driver"} | Sort-Object 'Date' -Descending
-  $dellcommand_results_dash_application = $dellcommand_results | Select-Object * | where {$_.type -eq "Application"} | Sort-Object 'Date' -Descending
-  $dellcommand_results_dash_firmware = $dellcommand_results | Select-Object * | where {$_.type -eq "Firmware"} | Sort-Object 'Date' -Descending
-  $dellcommand_results_dash_bios = $dellcommand_results | Select-Object * | where {$_.type -eq "BIOS"} | Sort-Object 'Date' -Descending
+  $dellcommand_results_dash_drivers = $dellcommand_results | Select-Object * | Where-Object {$_.type -eq 'Driver'} | Sort-Object 'Date' -Descending
+  $dellcommand_results_dash_application = $dellcommand_results | Select-Object * | Where-Object {$_.type -eq 'Application'} | Sort-Object 'Date' -Descending
+  $dellcommand_results_dash_firmware = $dellcommand_results | Select-Object * | Where-Object {$_.type -eq 'Firmware'} | Sort-Object 'Date' -Descending
+  $dellcommand_results_dash_bios = $dellcommand_results | Select-Object * | Where-Object {$_.type -eq 'BIOS'} | Sort-Object 'Date' -Descending
   
   $dashboardreport_name = "$env:computername-DellCommandUpdates-$(Get-Date -Format yyyy-mm-dd-hhmm)"
   if($save_report_location)
   {
-    if(!(Test-path $save_report_location))
+    if(!(Test-Path $save_report_location))
     {
-      write-ezlogs "Save directory doesnt exist...attempting to create at $save_report_location" -ShowTime -enablelogs:$enablelogs
+      Write-EZLogs "Save directory doesnt exist...attempting to create at $save_report_location" -ShowTime -enablelogs:$enablelogs
       try
-      {
-        $null = new-item $save_report_location -ItemType Directory -force
-      }
+      {$null = New-Item $save_report_location -ItemType Directory -force}
       catch
       {
-        write-ezlogs "[ERROR] Exception creating directory $save_report_location - $_" -ShowTime -color Red -enablelogs:$enablelogs
-        write-ezlogs "Setting save report location to: $DownloadLocation_Dell" -ShowTime -color Red -enablelogs:$enablelogs
+        Write-EZLogs "[ERROR] Exception creating directory $save_report_location - $_" -ShowTime -color Red -enablelogs:$enablelogs
+        Write-EZLogs "Setting save report location to: $DownloadLocation_Dell" -ShowTime -color Red -enablelogs:$enablelogs
         $save_report_location = $DownloadLocation_Dell
       }
     }
     $dashboardreport_file = [System.IO.Path]::Combine($save_report_location, "$dashboardreport_name.html")
   }
   else
-  {
-    $dashboardreport_file = [System.IO.Path]::Combine($DownloadLocation_Dell, "$dashboardreport_name.html")
-  }
-  Dashboard -Name $dashboardreport_name -FilePath $dashboardreport_file -ShowHTML:$open_report  {
+  {$dashboardreport_file = [System.IO.Path]::Combine($DownloadLocation_Dell, "$dashboardreport_name.html")}
+  New-HTML -Name $dashboardreport_name -FilePath $dashboardreport_file -ShowHTML:$open_report  {
     New-HTMLMain -BackgroundColor dimgray
-    TabOptions -SlimTabs -LinearGradient  -BackgroundColor lightblue -FontWeightActive bold -BorderStyle outset -BorderBottomStyleActive groove -BorderBottomColorActive lightgrey
-    Tab -Name "$env:computername - Dell Command Report" -IconSolid desktop -TextSize 14 -IconColor white -IconSize 15 -HtmlData {
-        Tab -Name 'All Available Updates' -IconSolid hdd -HtmlData  {  
-          Section -BackgroundColor LightGrey -HeaderBackGroundColor navy -Content {
-            Panel -AlignContentText center -BackgroundColor white -Content  {
-              New-HTMLTableOption -DataStore HTML 
-              New-HTMLTable -DataTable $dellcommand_results_dash_all -DefaultSortIndex 0 -ExcludeProperty 'DisplayName' -filtering -AutoSize -DefaultSortOrder Descending  -FreezeColumnsLeft 1 -PagingOptions 100 -ScreenSizePercent 65 -DateTimeSortingFormat 'M-dd-yyy HH:mm:ss tt' -InvokeHTMLTags  {
+    New-HTMLTabStyle -SlimTabs -LinearGradient  -BackgroundColor lightblue -FontWeightActive bold -BorderStyle outset -BorderBottomStyleActive groove -BorderBottomColorActive lightgrey
+    New-HTMLTab -Name "$env:computername - Dell Command Report" -IconSolid desktop -TextSize 14 -IconColor white -IconSize 15 -HtmlData {
+      New-HTMLTab -Name 'All Available Updates' -IconSolid hdd -HtmlData  {  
+        New-HTMLSection -BackgroundColor LightGrey -HeaderBackGroundColor navy -Content {
+          New-HTMLPanel -AlignContentText center -BackgroundColor white -Content  {
+            New-HTMLTableOption -DataStore HTML 
+            New-HTMLTable -DataTable $dellcommand_results_dash_all -DefaultSortIndex 0 -ExcludeProperty 'DisplayName' -filtering -AutoSize -DefaultSortOrder Descending  -FreezeColumnsLeft 1 -PagingOptions 100 -ScreenSizePercent 65 -DateTimeSortingFormat 'M-dd-yyy HH:mm:ss tt' -InvokeHTMLTags  {
               New-TableCondition -Name 'Urgency' -ComparisonType string -Operator contains -Value 'Urgent' -FontWeight bold -FontSize 12 -BackgroundColor red -color white
-              }
+              New-TableCondition -Name 'Status' -ComparisonType string -Operator contains -Value 'Installed' -FontWeight bold -FontSize 12 -color green -Row -FontStyle italic
             }
           }
-        }
-        if($dellcommand_results_dash_drivers)
-        {
-          Tab -Name 'Driver Updates' -IconSolid hdd -HtmlData  {  
-            Section -BackgroundColor LightGrey -HeaderBackGroundColor navy -Content {
-              Panel -AlignContentText center -BackgroundColor white -Content  {
-                New-HTMLTable -DataTable $dellcommand_results_dash_drivers -DefaultSortIndex 0 -ExcludeProperty 'DisplayName' -filtering -AutoSize -DefaultSortOrder Descending  -FreezeColumnsLeft 1 -PagingOptions 100 -ScreenSizePercent 65 -DateTimeSortingFormat 'M-dd-yyy HH:mm:ss tt' -InvokeHTMLTags {
-                  New-TableCondition -Name 'Urgency' -ComparisonType string -Operator contains -Value 'Urgent' -FontWeight bold -FontSize 12 -BackgroundColor red -color white
-                }
-              }
-            }
-          }
-        }
-        if($dellcommand_results_dash_application)
-        {
-          Tab -Name 'Application Updates' -IconSolid hdd -HtmlData  {  
-            Section -BackgroundColor LightGrey -HeaderBackGroundColor navy -Content {
-              Panel -AlignContentText center -BackgroundColor white -Content  {
-                New-HTMLTable -DataTable $dellcommand_results_dash_application -DefaultSortIndex 0 -ExcludeProperty 'DisplayName' -filtering -AutoSize -DefaultSortOrder Descending  -FreezeColumnsLeft 1 -PagingOptions 100 -ScreenSizePercent 65 -DateTimeSortingFormat 'M-dd-yyy HH:mm:ss tt'   -InvokeHTMLTags {
-                  New-TableCondition -Name 'Urgency' -ComparisonType string -Operator contains -Value 'Urgent' -FontWeight bold -FontSize 12 -BackgroundColor red -color white
-                }
-              }
-            }
-          }
-        }
-        if($dellcommand_results_dash_firmware)
-        {
-          Tab -Name 'Firmware Updates' -IconSolid hdd -HtmlData  {  
-            Section -BackgroundColor LightGrey -HeaderBackGroundColor navy -Content {
-              Panel -AlignContentText center -BackgroundColor white -Content  {
-                New-HTMLTable -DataTable $dellcommand_results_dash_firmware -DefaultSortIndex 0 -ExcludeProperty 'DisplayName' -filtering -AutoSize -DefaultSortOrder Descending  -FreezeColumnsLeft 1 -PagingOptions 100 -ScreenSizePercent 65 -DateTimeSortingFormat 'M-dd-yyy HH:mm:ss tt' -InvokeHTMLTags  {
-                  New-TableCondition -Name 'Urgency' -ComparisonType string -Operator contains -Value 'Urgent' -FontWeight bold -FontSize 12 -BackgroundColor red -color white
-                }
-              }
-            }
-          }
-        }
-        if($dellcommand_results_dash_bios)
-        {
-          Tab -Name 'BIOS Updates' -IconSolid hdd -HtmlData  {  
-            Section -BackgroundColor LightGrey -HeaderBackGroundColor navy -Content {
-              Panel -AlignContentText center -BackgroundColor white -Content  {
-                New-HTMLTable -DataTable $dellcommand_results_dash_bios -DefaultSortIndex 0 -ExcludeProperty 'DisplayName' -filtering -AutoSize -DefaultSortOrder Descending  -FreezeColumnsLeft 1 -PagingOptions 100 -ScreenSizePercent 65 -DateTimeSortingFormat 'M-dd-yyy HH:mm:ss tt' -InvokeHTMLTags {
-                  New-TableCondition -Name 'Urgency' -ComparisonType string -Operator contains -Value 'Urgent' -FontWeight bold -FontSize 12 -BackgroundColor red -color white
-                }
-              }
-            }
-          } 
         }
       }
+      if($dellcommand_results_dash_drivers)
+      {
+        New-HTMLTab -Name 'Driver Updates' -IconSolid hdd -HtmlData  {  
+          New-HTMLSection -BackgroundColor LightGrey -HeaderBackGroundColor navy -Content {
+            New-HTMLPanel -AlignContentText center -BackgroundColor white -Content  {
+              New-HTMLTable -DataTable $dellcommand_results_dash_drivers -DefaultSortIndex 0 -ExcludeProperty 'DisplayName' -filtering -AutoSize -DefaultSortOrder Descending  -FreezeColumnsLeft 1 -PagingOptions 100 -ScreenSizePercent 65 -DateTimeSortingFormat 'M-dd-yyy HH:mm:ss tt' -InvokeHTMLTags {
+                New-TableCondition -Name 'Urgency' -ComparisonType string -Operator contains -Value 'Urgent' -FontWeight bold -FontSize 12 -BackgroundColor red -color white
+                New-TableCondition -Name 'Status' -ComparisonType string -Operator contains -Value 'Installed' -FontWeight bold -FontSize 12 -color green -Row -FontStyle italic
+              }
+            }
+          }
+        }
+      }
+      if($dellcommand_results_dash_application)
+      {
+        New-HTMLTab -Name 'Application Updates' -IconSolid hdd -HtmlData  {  
+          New-HTMLSection -BackgroundColor LightGrey -HeaderBackGroundColor navy -Content {
+            New-HTMLPanel -AlignContentText center -BackgroundColor white -Content  {
+              New-HTMLTable -DataTable $dellcommand_results_dash_application -DefaultSortIndex 0 -ExcludeProperty 'DisplayName' -filtering -AutoSize -DefaultSortOrder Descending  -FreezeColumnsLeft 1 -PagingOptions 100 -ScreenSizePercent 65 -DateTimeSortingFormat 'M-dd-yyy HH:mm:ss tt'   -InvokeHTMLTags {
+                New-TableCondition -Name 'Urgency' -ComparisonType string -Operator contains -Value 'Urgent' -FontWeight bold -FontSize 12 -BackgroundColor red -color white
+                New-TableCondition -Name 'Status' -ComparisonType string -Operator contains -Value 'Installed' -FontWeight bold -FontSize 12 -color green -Row -FontStyle italic
+              }
+            }
+          }
+        }
+      }
+      if($dellcommand_results_dash_firmware)
+      {
+        New-HTMLTab -Name 'Firmware Updates' -IconSolid hdd -HtmlData  {  
+          New-HTMLSection -BackgroundColor LightGrey -HeaderBackGroundColor navy -Content {
+            New-HTMLPanel -AlignContentText center -BackgroundColor white -Content  {
+              New-HTMLTable -DataTable $dellcommand_results_dash_firmware -DefaultSortIndex 0 -ExcludeProperty 'DisplayName' -filtering -AutoSize -DefaultSortOrder Descending  -FreezeColumnsLeft 1 -PagingOptions 100 -ScreenSizePercent 65 -DateTimeSortingFormat 'M-dd-yyy HH:mm:ss tt' -InvokeHTMLTags  {
+                New-TableCondition -Name 'Urgency' -ComparisonType string -Operator contains -Value 'Urgent' -FontWeight bold -FontSize 12 -BackgroundColor red -color white
+                New-TableCondition -Name 'Status' -ComparisonType string -Operator contains -Value 'Installed' -FontWeight bold -FontSize 12 -color green -Row -FontStyle italic
+              }
+            }
+          }
+        }
+      }
+      if($dellcommand_results_dash_bios)
+      {
+        New-HTMLTab -Name 'BIOS Updates' -IconSolid hdd -HtmlData  {  
+          New-HTMLSection -BackgroundColor LightGrey -HeaderBackGroundColor navy -Content {
+            New-HTMLPanel -AlignContentText center -BackgroundColor white -Content  {
+              New-HTMLTable -DataTable $dellcommand_results_dash_bios -DefaultSortIndex 0 -ExcludeProperty 'DisplayName' -filtering -AutoSize -DefaultSortOrder Descending  -FreezeColumnsLeft 1 -PagingOptions 100 -ScreenSizePercent 65 -DateTimeSortingFormat 'M-dd-yyy HH:mm:ss tt' -InvokeHTMLTags {
+                New-TableCondition -Name 'Urgency' -ComparisonType string -Operator contains -Value 'Urgent' -FontWeight bold -FontSize 12 -BackgroundColor red -color white
+                New-TableCondition -Name 'Status' -ComparisonType string -Operator contains -Value 'Installed' -FontWeight bold -FontSize 12 -color green -Row -FontStyle italic
+              }
+            }
+          }
+        } 
+      }
+    }
   }
   if(Test-Path $dashboardreport_file)
-  {
-    write-ezlogs "[SUCCESS] HTML Report file successfully generated and saved to: $dashboardreport_file" -showtime -color green -enablelogs:$enablelogs
-  }
+  {Write-EZLogs "[SUCCESS] HTML Report file successfully generated and saved to: $dashboardreport_file" -showtime -color green -enablelogs:$enablelogs}
   else
-  {
-    write-ezlogs -Text "No report file was generated or there was no valid data returned from Dell Command to create a report from" -Color red -enablelogs:$enablelogs -Warning
-  }  
+  {Write-EZLogs -Text 'No report file was generated or there was no valid data returned from Dell Command to create a report from' -Color red -enablelogs:$enablelogs -Warning}  
 }
-
 #---------------------------------------------- 
 #endregion Build HTML Dashboard Report
 #----------------------------------------------
@@ -1070,89 +1144,63 @@ if($email_report -eq 1){$send_email = $true}else{$send_email = $false}
 if($email_logs -eq 1){$send_email_logs = $true}else{$send_email_logs = $false}
 if($send_email -and $dashboardreport_file)
 {
-  write-ezlogs -Text "`n#### Generating and Sending Email ####" -Color yellow -enablelogs:$enablelogs
+  Write-EZLogs -Text "`n#### Generating and Sending Email ####" -Color yellow -enablelogs:$enablelogs
   try 
-  {
-    Send-Email -dashboardreport_file $dashboardreport_file -SmtpUser $SmtpUser -SmtpPort $SmtpPort -SmtpServer $SmtpServer -MailFrom $MailFrom -MailTo $MailTo -Subject $Subject -SmtpPassword $SmtpPassword -enablelogs:$send_email_logs -logfile:$logfile
-  }
+  {Send-Email -dashboardreport_file $dashboardreport_file -SmtpUser $SmtpUser -SmtpPort $SmtpPort -SmtpServer $SmtpServer -MailFrom $MailFrom -MailTo $MailTo -Subject $Subject -SmtpPassword $SmtpPassword -enablelogs:$send_email_logs -logfile:$logfile}
   catch
-  {
-    write-ezlogs "[ERROR] $_" -Color Red -enablelogs:$enablelogs
-  }
+  {Write-EZLogs "[ERROR] $_" -Color Red -enablelogs:$enablelogs}
 }
 if(!$save_report_location -and $dashboardreport_file)
 {
   try 
   {
-    write-ezlogs -Text "Removing Dashboard Report File $dashboardreport_file" -ShowTime -enablelogs:$enablelogs
+    Write-EZLogs -Text "Removing Dashboard Report File $dashboardreport_file" -ShowTime -enablelogs:$enablelogs
     Remove-Item $dashboardreport_file -Recurse
   }
   catch
-  {
-    write-ezlogs "[ERROR] $_" -Color Red -enablelogs:$enablelogs
-  }  
+  {Write-EZLogs "[ERROR] $_" -Color Red -enablelogs:$enablelogs}  
 }
-write-ezlogs "`n#### Cleaning Up Temp Files and Folders ####" -color yellow -enablelogs:$enablelogs
+Write-EZLogs "`n#### Cleaning Up Temp Files and Folders ####" -color yellow -enablelogs:$enablelogs
 if($dellcommand_results)
 {
   try
   {
-    write-ezlogs "Removing file: $DownloadLocation_dell\DCUApplicableUpdates.xml" -showtime -enablelogs:$enablelogs
-    $null = Remove-item "$DownloadLocation_dell\DCUApplicableUpdates.xml" -Force
-    write-ezlogs "Removing file: $DownloadLocation_dell\DellCommand.log" -showtime -enablelogs:$enablelogs
-    $null = Remove-item "$DownloadLocation_dell\DellCommand.log" -Force
+    Write-EZLogs "Removing file: $DownloadLocation_dell\DCUApplicableUpdates.xml" -showtime -enablelogs:$enablelogs
+    $null = Remove-Item "$DownloadLocation_dell\DCUApplicableUpdates.xml" -Force
+    Write-EZLogs "Removing file: $DownloadLocation_dell\DellCommand.log" -showtime -enablelogs:$enablelogs
+    $null = Remove-Item "$DownloadLocation_dell\DellCommand.log" -Force
   }
   catch
-  {
-    write-ezlogs "[ERROR] Unable to remove file(s) -- $_" -ShowTime -color red -enablelogs:$enablelogs
-  }
+  {Write-EZLogs "[ERROR] Unable to remove file(s) -- $_" -ShowTime -color red -enablelogs:$enablelogs}
 }
 try
 {
-  write-ezlogs "Removing $Script_Temp_Folder" -ShowTime -enablelogs:$enablelogs
+  Write-EZLogs "Removing $Script_Temp_Folder" -ShowTime -enablelogs:$enablelogs
   Remove-Item $Script_Temp_Folder -Recurse -Force
-  write-ezlogs "[SUCCESS] Execution and cleanup complete" -showtime -color green -enablelogs:$enablelogs
+  Write-EZLogs '[SUCCESS] Execution and cleanup complete' -showtime -color green -enablelogs:$enablelogs
 }
 catch
-{
-  write-ezlogs "[ERROR] - $_" -ShowTime -color Red -enablelogs:$enablelogs
-}
+{Write-EZLogs "[ERROR] - $_" -ShowTime -color Red -enablelogs:$enablelogs}
 #---------------------------------------------- 
 #endregion Send Email and Cleanup
 #----------------------------------------------
 
 #---------------------------------------------- 
-#region Finish Logging
+#region Stop Logging
 #----------------------------------------------
 if ($enablelogs)
 {
-  if($error)
-  {
-    Write-Output "`n`n[-----ALL ERRORS------]" | Out-File -FilePath $logfile -Encoding unicode -Append
-    $e_index = 0
-    foreach ($e in $error)
-    {
-      $e_index++
-      Write-Output "[ERROR $e_index Message] =========================================================================`n$($e.exception.message)`n$($e.InvocationInfo.positionmessage)`n$($e.ScriptStackTrace)`n`n" | Out-File -FilePath $logfile -Encoding unicode -Append
-    }
-    Write-Output '-----------------' | Out-File -FilePath $logfile -Encoding unicode -Append
-    $error.Clear()
-  }
-  write-ezlogs "`n======== Total Script Execution Time ========" -enablelogs:$enablelogs -LogTime:$false
-  write-ezlogs "Minutes      : $($stopwatch.elapsed.Minutes)`nSeconds      : $($stopwatch.elapsed.Seconds)`nMilliseconds : $($stopwatch.elapsed.Milliseconds)" -enablelogs:$enablelogs -LogTime:$false
-  $($stopwatch.stop())
-  $($stopwatch.reset()) 
-  Write-Output "###################### Logging Finished - [$(Get-Date -Format $logdateformat)] ######################`n" | Out-File -FilePath $logfile -Encoding unicode -Append
+  Stop-Logging -ErrorSummary -clearErrors -stoptimer
 }  
 #---------------------------------------------- 
-#endregion Finish Logging
+#endregion Stop Logging
 #----------------------------------------------
 #############################################################################
 #endregion Execution and Output Functions
 #############################################################################
 '''
 
-print ("iTarian RMM - Executing Powershell Script")
+print ("iTarian RMM- Executing Powershell Script")
 
 def ecmd(command):
     import ctypes

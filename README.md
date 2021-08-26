@@ -40,7 +40,7 @@ Automates checking for or installing Dell driver, firmware and other updates ava
 
 - Python only version that is also the source code for the iTarian Procedure
 
-**[iTarian Procedure](https://github.com/EZTechhelp/EZT-DellCommand/raw/main/EZT-DellCommand-v023.json)**
+**[iTarian Procedure](https://github.com/EZTechhelp/EZT-DellCommand/raw/main/EZT-DellCommand.json)**
 
 - Basically just the Python version exported from iTarian. Use this to quickly import into your iTarian procedures
 
