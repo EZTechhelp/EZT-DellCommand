@@ -3,7 +3,7 @@
     EZT-DellCommand
     
     .Version 
-    0.25
+    0.27
 
     .SYNOPSIS
     Automates checking for or installing Dell driver, firmware and other updates available using DellCommand
@@ -514,7 +514,7 @@ Function Get-DellCommand
     $App_name = 'DellCommand'
     $dell_log = "$DownloadLocation_dell\DellCommand.log"
     $execute_file_name = 'DellCommandUpdate.exe'
-    $arguments = "/scan -report=$DownloadLocation_dell -outputlog=$dell_log"
+    $arguments = "/scan -userConsent=disable -report=$DownloadLocation_dell -outputlog=$dell_log"
     $download_output_file = [System.IO.Path]::Combine($DownloadLocation_dell, $execute_file_name)  
     #Download BrowsingHistoryView
     try 
@@ -541,7 +541,17 @@ Function Get-DellCommand
   }
   $DCU_Args = $null
   $block = $Null
+  if(Test-Path "$DownloadLocation_dell\DellCommand.log")
+  {
+    Write-EZLogs "Removing file: $DownloadLocation_dell\DellCommand.log" -showtime -enablelogs:$enablelogs
+    $null = Remove-Item "$DownloadLocation_dell\DellCommand.log" -Force
+  }
+  #$DCU_Config_Args = "/configure -userConsent=disable -silent -outputlog=$DownloadLocation_dell\DellCommand.log -autoSuspendBitLocker=enable"
+  #write-ezlogs "Starting process to set DCU configuration: $env:ProgramW6432\Dell\CommandUpdate\dcu-cli.exe $DCU_Config_Args"  -showtime -color Cyan -enablelogs:$enablelogs
+  #$proc = Start-Process "$env:ProgramW6432\Dell\CommandUpdate\dcu-cli.exe" -ArgumentList $DCU_Config_Args -Wait -WindowStyle Hidden
+  #$proc | Wait-Process -Timeout 400 -ErrorAction Continue
   $DCU_Args = "/scan -report=$DownloadLocation_dell -silent -outputlog=$DownloadLocation_dell\DellCommand.log"
+  write-ezlogs "Starting DCU scan process: $env:ProgramW6432\Dell\CommandUpdate\dcu-cli.exe $DCU_Args"  -showtime -color Cyan -enablelogs:$enablelogs
   $block = 
   {
     Param
@@ -550,10 +560,8 @@ Function Get-DellCommand
       [string]$dell_log,
       [switch]$enablelogs,
       [string]$DCU_Args
-      
     )
     #Run Dell Command Update process
-    Write-Output "Starting process: $env:ProgramW6432\Dell\CommandUpdate\dcu-cli.exe $using:DCU_Args"  | Out-File -FilePath $using:logfile -Encoding unicode -Append
     $proc = Start-Process "$env:ProgramW6432\Dell\CommandUpdate\dcu-cli.exe" -ArgumentList $using:DCU_Args -Wait -WindowStyle Hidden
     $proc | Wait-Process -Timeout 400 -ErrorAction Continue -ErrorVariable timeouted
     if ($timeouted)
@@ -604,6 +612,9 @@ Function Get-DellCommand
         $count++
         Write-EZLogs "$_" -enablelogs:$enablelogs
         if($_ -match 'The program exited with return code: 500 '){ $dellexit_code = 500 ;break}
+        if($_ -match 'The program exited with return code: 501 '){ $dellexit_code = 501 ;break}
+        if($_ -match 'The program exited with return code: 502 '){ $dellexit_code = 502 ;break}
+        if($_ -match 'The program exited with return code: 503 '){ $dellexit_code = 503 ;break}
         if($_ -match 'EZT-ERROR'){ $dellexit_code = 2 ;break}  
         if($_ -match 'Number of applicable updates for the current system configuration:'){ $dellupdates_code = $_.Substring(($_.IndexOf('configuration: ')+15))}
         if($_ -match 'The program exited with return code: 0 '){ $dellexit_code = 0 ;break}  
@@ -624,19 +635,38 @@ Function Get-DellCommand
   $dellupdates_code = $dellupdates_code.trim()
   if($dellexit_code -eq 500)
   {
-    Write-EZLogs '[INFO] The system is up to date or no updates were found for the provided filters. Modify the filters and re-run the commands' -showtime -enablelogs:$enablelogs -color Cyan
+    Write-EZLogs '[INFO] Dell Command found no updates available with the provided filters. If this is not expected, modify the filters and re-run' -showtime -enablelogs:$enablelogs -color Cyan
+    return $false
+  }
+  elseif($dellexit_code -eq 501)
+  {
+    Write-EZLogs '[ERROR] Dell Command returned an error: An error occurred while determining the available updates for the system, when a scan operation was executed. Retry the operation.' -showtime -enablelogs:$enablelogs -color red
+    return $false
+  }
+  elseif($dellexit_code -eq 502)
+  {
+    Write-EZLogs '[ERROR] Dell Command returned an error: The cancellation was initiated, Hence, the scan operation is cancelled. Retry the operation.' -showtime -enablelogs:$enablelogs -color red
+    return $false
+  }
+  elseif($dellexit_code -eq 503)
+  {
+    Write-EZLogs '[ERROR] Dell Command returned an error: An error occurred while downloading a file during the scan operation. Check your network connection, make sure there is internet connectivity and Retry the command.' -showtime -enablelogs:$enablelogs -color red
     return $false
   }
   elseif($dellupdates_code)
-  {Write-EZLogs "[INFO] Dell Command found $dellupdates_code updates that are available for this system" -showtime -enablelogs:$enablelogs -color Cyan}
-  try
-  {[xml]$XMLReport = Get-Content "$DownloadLocation_dell\DCUApplicableUpdates.xml" -ErrorAction stop}
-  catch
   {
-    Write-EZLogs "[ERROR] Unable to process DCUApplicableUpdates.xml - $_" -ShowTime -color red -enablelogs:$enablelogs
-    return $false
+    Write-EZLogs "[INFO] Dell Command found $dellupdates_code updates that are available for this system" -showtime -enablelogs:$enablelogs -color Cyan
   }
-  
+  if(Test-Path "$DownloadLocation_dell\DCUApplicableUpdates.xml")
+  {
+    try
+    {[xml]$XMLReport = Get-Content "$DownloadLocation_dell\DCUApplicableUpdates.xml" -ErrorAction stop}
+    catch
+    {
+      Write-EZLogs "[ERROR] Unable to process DCUApplicableUpdates.xml - $_" -ShowTime -color red -enablelogs:$enablelogs
+      return $false
+    }  
+  }
   $AvailableUpdates = $XMLReport.updates.update
   $BIOSUpdates = ($XMLReport.updates.update | Where-Object { $_.type -eq 'BIOS' }).name.Count
   $ApplicationUpdates = ($XMLReport.updates.update | Where-Object { $_.type -eq 'Application' }).name.Count
@@ -678,8 +708,11 @@ Function Get-DellCommand
   }
   Write-EZLogs "Availabe Update Types Found: $($AvailableUpdates.type | Select-Object -Unique)" -ShowTime -enablelogs:$enablelogs
   Write-EZLogs "Selected Update Types to install: $($ApplyUpdate_Array)" -ShowTime -enablelogs:$enablelogs
+  Write-EZLogs "Update Types that will install: $($updates_types_toinstall)" -ShowTime -enablelogs:$enablelogs
   Write-EZLogs "Availabe Update Severity Types Found: $($AvailableUpdates.urgency + ($AvailableUpdates.category | where {$_ -eq 'Security'}) | Select-Object -Unique)" -ShowTime -enablelogs:$enablelogs
   Write-EZLogs "Selected Update Severity Types to install: $($applySeverityTypes_Search_Array)" -ShowTime -enablelogs:$enablelogs
+  Write-EZLogs "Update Severity Types that will install: $($updates_severity_toinstall)" -ShowTime -enablelogs:$enablelogs
+  
   
   if($ApplyAllUpdates -and $ApplyAllSeverity)
   {
@@ -688,19 +721,19 @@ Function Get-DellCommand
     write-EZLogs ">>>> Updates found that will be installed" -showtime -enablelogs:$enablelogs
     foreach ($u in $AvailableUpdates)
     {
-      write-ezlogs "$($u.name)`n | Type: $($u.type)`n | Severity: $($u.urgency)"  -enablelogs:$enablelogs
+      write-ezlogs "$($u.name)`n | Type: $($u.type)`n | Severity: $($u.urgency)`n | Category: $($u.category)"  -enablelogs:$enablelogs
     } 
   }
   else
   {
-    $updates_will_install = $AvailableUpdates | where {$($updates_severity_toinstall) -contains $_.urgency -and $($updates_types_toinstall) -contains $_.type -or $($updates_severity_toinstall) -contains $_.category -and $($updates_types_toinstall) -contains $_.type }
+    $updates_will_install = $AvailableUpdates | where {$($updates_severity_toinstall) -contains $_.urgency -or $($updates_types_toinstall) -contains $_.type -or $($updates_severity_toinstall) -contains $_.category}
     if($updates_will_install)
     {
       $InstallUpdates = $true
       write-EZLogs ">>>> Updates found that will be installed" -showtime -enablelogs:$enablelogs
       foreach ($in in $updates_will_install)
       {
-        write-ezlogs "$($in.name)`n | Type: $($in.type)`n | Severity: $($in.urgency)"  -enablelogs:$enablelogs
+        write-ezlogs "$($in.name)`n | Type: $($in.type)`n | Severity: $($in.urgency)`n | Category: $($in.category)"  -enablelogs:$enablelogs
       }    
     }  
     else
@@ -751,12 +784,20 @@ Function Get-DellCommand
     {
       $updates_types_toinstall_arg = $updates_types_toinstall_arg
     }
+    if(!$updates_types_toinstall_arg -and !$ApplyAllUpdates -and !$ApplyAllSeverity)
+    {
+      Write-EZLogs "[ERROR]: DCU apply update filter argurments were blank, which implies to install all available updates, yet both ApplyAllUpdates and ApplyAllSeverity were false so this should not have happened. Will not apply updates as precaution" -showtime -enablelogs:$enablelogs
+      Write-EZLogs " | Update Types to install: $updates_types_toinstall`n | Severity Types to Install: $updates_severity_toinstall" -showtime -enablelogs:$enablelogs
+      Return $false
+    }
       try
       {
+        Write-EZLogs "Removing file: $DownloadLocation_dell\DellCommand.log" -showtime -enablelogs:$enablelogs
+        $null = Remove-Item "$DownloadLocation_dell\DellCommand.log" -Force
         $dell_warnings = $null
         $DCU_Args = "/applyUpdates -autoSuspendBitLocker=enable $updates_toinstall_arg -silent -reboot=$rebootarg -outputlog=$DownloadLocation_dell\DellCommand.log"
-        write-ezlogs "DCU launching with args: $DCU_Args" -showtime -color Cyan
-        #write-ezlogs "Simulating successful install" -showtime -color Cyan
+        write-ezlogs "Starting process: $env:ProgramW6432\Dell\CommandUpdate\dcu-cli.exe $DCU_Args"  -showtime -color Cyan -enablelogs:$enablelogs
+        #write-ezlogs "Simulating successful install" -showtime -color Cyan -enablelogs:$enablelogs
         #$dellexit_code = 11
         ########################################################################################################
             Get-Job | Remove-Job -Force
@@ -782,6 +823,7 @@ Function Get-DellCommand
             Get-Content -Path "$DownloadLocation_dell\DellCommand.log" -force -Tail 1 -wait  | ForEach-Object {
               $count2++
               Write-EZLogs "$_" -enablelogs:$enablelogs
+              if($dellupdates_failed){$dellupdates_list += $_;$dellupdates_failed = $null}
               if($_ -match 'The program exited with return code: 500 '){ $dellexit_code = 500 ;break}
               if($_ -match 'EZT-ERROR'){ $dellexit_code = 2 ;break} 
               if($_ -match 'Finished installing the updates'){ $dellupdates_code = 11}
@@ -789,6 +831,7 @@ Function Get-DellCommand
               if($_ -match 'The system has been updated and requires a reboot to complete the process.'){ $dellreboot_code = 1}
               if($_ -match 'Warning:'){$dell_warnings += "$_"}
               if($_ -match 'Error'){$dell_errors += "$_"}
+              if($_ -match 'update(s) failed to install.'){$dellupdates_failed = 1;$dellupdates_failed_string = $_}
               if($_ -match 'The program exited with return code: 0 '){ $dellexit_code = 0 ;break}  
               if($_ -match 'Program exited with return code:' -and $_ -notmatch 'Exiting with exit code: InvalidParameters'){break} 
               if($(Get-Job -State Running).count -eq 0){$delljob_code = 0;break }
@@ -809,6 +852,14 @@ Function Get-DellCommand
         if($dellupdates_code -eq 11)
         {
           Write-EZLogs '[INFO] Dell Command finished installing updates' -showtime -enablelogs:$enablelogs -color Cyan
+        }
+        if($dellupdates_failed_string)
+        {
+          Write-EZLogs "[ERROR] $dellupdates_failed_string" -showtime -enablelogs:$enablelogs -color Cyan
+          foreach ($d in $dellupdates_list)
+          {
+            Write-EZLogs " | $d" -showtime -enablelogs:$enablelogs -color Cyan
+          }
         }
         if($dellexit_code -eq 1 -or $dellreboot_code -eq 1 )
         {
@@ -1006,9 +1057,9 @@ Function Get-DellCommand
 if ($runDellCommand)
 {
   #Ensure the script runs with elevated priviliges
-  if($InstallDellCommand_Update_reboot -eq 1){$reboot_arg = $true}else{$reboot_arg = $false}
   Use-RunAs
-  if(!$installDellCommand_Update_Severity -or $installDellCommand_Update_Severity -match 'All'){$ApplyAllSeverityTypes = $true}else{$ApplyAllSeverityTypes = $false}
+  if($InstallDellCommand_Update_reboot -eq 1){$reboot_arg = $true}else{$reboot_arg = $false}
+  if($installDellCommand_Update_Severity -match 'All'){$ApplyAllSeverityTypes = $true}else{$ApplyAllSeverityTypes = $false}
   if($installDellCommand_Update_Types -and $installDellCommand_Update_Types -notmatch 'All')
   {
      $dellcommand_results = Get-DellCommand -ApplyUpdateTypes $installDellCommand_Update_Types -ApplyAllSeverity:$ApplyAllSeverityTypes -ApplySeverityTypes $installDellCommand_Update_Severity -reboot:$reboot_arg
@@ -1133,7 +1184,6 @@ if ($create_report -and $dellcommand_results)
   else
   {Write-EZLogs -Text 'No report file was generated or there was no valid data returned from Dell Command to create a report from' -Color red -enablelogs:$enablelogs -Warning}  
 }
-
 #---------------------------------------------- 
 #endregion Build HTML Dashboard Report
 #----------------------------------------------
